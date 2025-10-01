@@ -39,12 +39,12 @@
   /* Visor horizontal, contenido y centrado */
   #reader{
     width:100%;
-    max-width:720px;      /* ancho máx del visor */
-    aspect-ratio:16/9;    /* apaisado */
+    max-width:720px;
+    aspect-ratio:16/9;
     border:1px solid var(--bd);
     border-radius:10px;
     background:#000;
-    margin:0 auto;        /* centrado */
+    margin:0 auto;
   }
 
   .led{width:12px;height:12px;border-radius:50%;border:1px solid #ccc;display:inline-block}
@@ -186,7 +186,7 @@ function updCond(){
   el.rowDestino.style.display=esMec?'':'none';
 }
 
-/* Utilidades */
+/* Totales + aviso U/Caja */
 function disableAuto(dis,why=''){
   if(dis){ AUTO=false; el.btnAuto.classList.remove('active'); el.btnAuto.classList.add('disabled'); el.btnAuto.style.opacity=.6; el.btnAuto.title=why; }
   else   { el.btnAuto.classList.remove('disabled'); el.btnAuto.style.opacity=1;  el.btnAuto.title=''; }
@@ -205,14 +205,27 @@ function calcTotal(){
 }
 el.contarPor.onchange=calcTotal; el.cantidad.oninput=calcTotal;
 
-/* ======== FETCH helpers con anti-cache ======== */
+/* ======== FETCH helpers con CORS y sin caché ======== */
 async function apiGet(url){
   const sep = url.includes('?') ? '&' : '?';
-  const r = await fetch(url + sep + 'ts=' + Date.now());
+  const full = url + sep + 'ts=' + Date.now();
+  const r = await fetch(full, {
+    mode: 'cors',
+    cache: 'no-store',
+    credentials: 'omit',
+    headers: { 'Accept':'application/json', 'Cache-Control':'no-cache' }
+  });
   return r.json();
 }
 async function apiPost(body){
-  const r = await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const r = await fetch(API, {
+    method:'POST',
+    mode:'cors',
+    cache:'no-store',
+    credentials:'omit',
+    headers:{ 'Content-Type':'application/json', 'Accept':'application/json' },
+    body: JSON.stringify(body)
+  });
   return r.json();
 }
 
@@ -242,7 +255,7 @@ async function lookupProduct(){
   calcTotal();
 }
 
-/* ========= Poblar Responsables (anti-cache) ========= */
+/* ========= Poblar Responsables (con estado visible) ========= */
 (async()=>{
   const info=(m)=>{ if(el.respStatus) el.respStatus.textContent=m||''; };
   try{
@@ -263,7 +276,7 @@ async function lookupProduct(){
   }
 })();
 
-/* === Escáner con marco apaisado y contenido === */
+/* === Escáner apaisado === */
 function setLed(state,msg){ el.scanLed.className='led '+(state||'gray'); el.scanMsg.textContent=msg||''; }
 
 el.scanStart.onclick=async()=>{
@@ -274,10 +287,9 @@ el.scanStart.onclick=async()=>{
     if(!id){ setLed('red','Sin cámara'); return; }
 
     el.reader.style.display='';
-    // ancho disponible y rectángulo horizontal moderado
     const contW = Math.max(320, el.reader.clientWidth || 720);
-    const qrW   = Math.min(Math.floor(contW * 0.78), 640); // ancho del marco
-    const qrH   = Math.round(qrW * 0.36);                  // alto del marco
+    const qrW   = Math.min(Math.floor(contW * 0.78), 640);
+    const qrH   = Math.round(qrW * 0.36);
 
     await qr.start(
       id,
