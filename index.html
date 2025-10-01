@@ -3,13 +3,17 @@
 <div id="app-root"></div>
 <link rel="preconnect" href="https://unpkg.com">
 <script src="https://unpkg.com/html5-qrcode"></script>
+
 <style>
   :root{--gap:14px;--fg:#111;--muted:#666;--bd:#dcdcdc;--bg:#fafafa}
-  *{box-sizing:border-box} body{font-family:system-ui,Segoe UI,Roboto,sans-serif;color:var(--fg);margin:0}
+  *{box-sizing:border-box}
+  body{font-family:system-ui,Segoe UI,Roboto,sans-serif;color:var(--fg);margin:0}
   .container{max-width:880px;margin:24px auto 64px;padding:0 16px}
   .card{background:var(--bg);border:1px solid var(--bd);border-radius:14px;padding:20px}
   .row{display:grid;grid-template-columns:1fr;gap:var(--gap);margin:0 0 var(--gap)}
-  .two{grid-template-columns:1fr 1fr} 
+  .two{grid-template-columns:1fr 1fr}
+  @media(max-width:720px){.two{grid-template-columns:1fr}}
+
   label{font-size:14px;color:var(--muted)}
   input,select,textarea{width:100%;padding:12px;font-size:16px;border:1px solid var(--bd);border-radius:10px;background:#fff}
   textarea{min-height:84px;resize:vertical}
@@ -18,30 +22,42 @@
   .pillbar{display:flex;gap:10px}
   .pill,.toggle{padding:8px 14px;border-radius:999px;border:1px solid var(--bd);background:#fff;cursor:pointer;user-select:none}
   .pill.active,.toggle.active{background:#111;color:#fff;border-color:#111}
-  .toggle-wrap{text-align:right;min-width:220px}.toggle-hint{display:block;margin-top:4px;font-size:12px;color:#666}
+  .toggle-wrap{text-align:right;min-width:220px}
+  .toggle-hint{display:block;margin-top:4px;font-size:12px;color:#666}
 
   #product{background:#fff;border:1px dashed var(--bd);border-radius:10px;padding:10px;font-size:14px;color:#333}
   #status{min-height:26px;font-size:15px;margin-top:6px}
 
-  .actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end} /* botón a la derecha */
+  .actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
   button{padding:12px 18px;font-size:16px;border-radius:10px;border:1px solid #111;background:#111;color:#fff;cursor:pointer}
-  button.secondary{background:#fff;color:#111} button:disabled{opacity:.6;cursor:not-allowed}
+  button.secondary{background:#fff;color:#111}
+  button:disabled{opacity:.6;cursor:not-allowed}
   .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
 
   #scanBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-  #reader{width:380px;max-width:100%;border:1px solid var(--bd);border-radius:10px;background:#fff}
+
+  /* Visor horizontal, más chico y centrado */
+  #reader{
+    width:100%;
+    max-width:720px;      /* antes 380px/860px – ahora apaisado y contenido */
+    aspect-ratio:16/9;
+    border:1px solid var(--bd);
+    border-radius:10px;
+    background:#000;
+    margin:0 auto;        /* centrado */
+  }
+
   .led{width:12px;height:12px;border-radius:50%;border:1px solid #ccc;display:inline-block}
   .led.red{background:#e03a3a}.led.green{background:#19a34a}.led.gray{background:#bbb}
   .inline{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   .muted{color:#666;font-size:14px}
   .alert{background:#ffe9e9;border:1px solid #ffb3b3;color:#9b1c1c;border-radius:10px;padding:10px;font-size:14px}
-  @media(max-width:720px){.two{grid-template-columns:1fr}}
 </style>
 
 <script>
-/* ==== CONFIGURAR AQUÍ TU API (Apps Script /exec) ==== */
-const API = 'https://script.google.com/macros/s/AKfycbzByLFnbWvj3ATuOrR_WwzYKKynbidQ9fLXNsoiSCVCCJB1eNKfP-xWhE_MR5kIGaqgPw/exec';
-/* ==================================================== */
+/* ==== API (Apps Script /exec) ==== */
+const API = 'https://script.google.com/macros/s/AKfycbyrhccA9bA5fgjt8Y4vSF5tuwwAbMfPQxn8LRfkgx7JQsfu40EZN1mO84cVdFgIr-ohWg/exec';
+/* ================================= */
 
 const $e = (sel,root=document)=>root.querySelector(sel);
 const el = {};
@@ -49,7 +65,6 @@ document.getElementById('app-root').innerHTML = `
 <div class="container"><div class="card">
   <h2>Sector Espera – Movimientos</h2>
 
-  <!-- Movimiento + Automático -->
   <div class="bar">
     <div class="pillbar">
       <span class="pill" id="btnIng">Ingreso</span>
@@ -61,7 +76,6 @@ document.getElementById('app-root').innerHTML = `
     </div>
   </div>
 
-  <!-- Estado (izquierda) + Responsable (derecha) en la misma línea -->
   <div class="row two">
     <div>
       <label>Estado</label>
@@ -75,7 +89,6 @@ document.getElementById('app-root').innerHTML = `
     </div>
   </div>
 
-  <!-- Condicionales: Destino (si Mecanizar) -->
   <div class="row" id="rowDestino" style="display:none">
     <div>
       <label>Destino mecanizado (si Mecanizar)</label>
@@ -83,17 +96,16 @@ document.getElementById('app-root').innerHTML = `
     </div>
   </div>
 
-  <!-- Condicionales: Motivo (si Rechazado) -->
   <div class="row" id="rowMotivo" style="display:none">
     <div>
       <label>Motivo (si Rechazado)</label>
       <select id="motivo">
-        <option>Fuera de medida</option><option>Color</option><option>Tornillos incorrectos</option><option>Otro</option>
+        <option>Fuera de medida</option><option>Color</option>
+        <option>Tornillos incorrectos</option><option>Otro</option>
       </select>
     </div>
   </div>
 
-  <!-- Código/Modelo -->
   <div class="row">
     <div>
       <label>Código o Modelo</label>
@@ -101,12 +113,8 @@ document.getElementById('app-root').innerHTML = `
     </div>
   </div>
 
-  <!-- Ficha (Descripción y datos) justo debajo del input -->
-  <div class="row">
-    <div id="product"></div>
-  </div>
+  <div class="row"><div id="product"></div></div>
 
-  <!-- Botones de escaneo (debajo de la descripción) -->
   <div class="row">
     <div id="scanBar">
       <button class="secondary" id="scanStart">📷 Escanear</button>
@@ -118,7 +126,6 @@ document.getElementById('app-root').innerHTML = `
     <div id="reader" style="display:none"></div>
   </div>
 
-  <!-- Cajas/Unidades + totales -->
   <div class="row two">
     <div>
       <label>Contar por</label>
@@ -143,12 +150,10 @@ document.getElementById('app-root').innerHTML = `
     </div>
   </div>
 
-  <!-- OC/OPI/Observaciones -->
   <div class="row"><div><label>OC (opcional)</label><input id="oc" /></div></div>
   <div class="row"><div><label>OPI (opcional)</label><input id="opi" /></div></div>
   <div class="row"><div><label>Observaciones (opcional)</label><textarea id="obs" rows="2"></textarea></div></div>
 
-  <!-- Botón Registrar a la derecha -->
   <div class="row">
     <div class="actions"><button id="enviar">✓ Registrar</button></div>
     <div id="status"></div>
@@ -157,19 +162,38 @@ document.getElementById('app-root').innerHTML = `
 `;
 
 const MOV = {val:'Ingreso'}; let AUTO=false, lastFicha=null, qr=null, scanning=false;
-['btnIng','btnEgr','btnAuto','estado','rowDestino','rowMotivo','key','product','scanStart','scanStop','scanClear','scanLed','scanMsg','reader','contarPor','cantidad','totalUnid','alertUxCaja','oc','opi','obs','resp','enviar','status']
-  .forEach(id=>el[id]=$e('#'+id));
+['btnIng','btnEgr','btnAuto','estado','rowDestino','rowMotivo','key','product',
+ 'scanStart','scanStop','scanClear','scanLed','scanMsg','reader',
+ 'contarPor','cantidad','totalUnid','alertUxCaja','oc','opi','obs','resp','enviar','status'
+].forEach(id=>el[id]=$e('#'+id));
 
 function setMov(m){MOV.val=m; el.btnIng.classList.toggle('active',m==='Ingreso'); el.btnEgr.classList.toggle('active',m==='Egreso'); updCond();}
 el.btnIng.onclick=()=>setMov('Ingreso'); el.btnEgr.onclick=()=>setMov('Egreso'); setMov('Ingreso');
 
 el.btnAuto.onclick=()=>{ if(el.btnAuto.classList.contains('disabled')) return; AUTO=!AUTO; el.btnAuto.classList.toggle('active',AUTO); el.btnAuto.setAttribute('aria-pressed',AUTO?'true':'false'); };
-el.estado.onchange=updCond;
-function updCond(){ const esRech=el.estado.value==='Rechazado', esMec=el.estado.value==='Mecanizar'; el.rowMotivo.style.display=esRech?'':'none'; el.rowDestino.style.display=esMec?'':'none'; }
 
-function disableAuto(dis,why=''){ if(dis){AUTO=false; el.btnAuto.classList.remove('active'); el.btnAuto.classList.add('disabled'); el.btnAuto.style.opacity=.6; el.btnAuto.title=why;}else{el.btnAuto.classList.remove('disabled'); el.btnAuto.style.opacity=1; el.btnAuto.title='';}}
+el.estado.onchange=updCond;
+function updCond(){ const esRech=el.estado.value==='Rechazado', esMec=el.estado.value==='Mecanizar';
+  el.rowMotivo.style.display=esRech?'':'none';
+  el.rowDestino.style.display=esMec?'':'none';
+}
+
+function disableAuto(dis,why=''){
+  if(dis){ AUTO=false; el.btnAuto.classList.remove('active'); el.btnAuto.classList.add('disabled'); el.btnAuto.style.opacity=.6; el.btnAuto.title=why; }
+  else   { el.btnAuto.classList.remove('disabled'); el.btnAuto.style.opacity=1;  el.btnAuto.title=''; }
+}
 function toggleAvisoUxCaja(show){ el.alertUxCaja.style.display=show?'':'none'; disableAuto(show,'Falta Unidades_por_caja para Cajas'); }
-function calcTotal(){ const modo=el.contarPor.value, cant=Math.max(1,parseInt(el.cantidad.value||'1',10)); const uxc=Number(lastFicha?.unidades_por_caja||0); let total=cant; if(modo==='c'){ if(uxc>0){ total=cant*uxc; toggleAvisoUxCaja(false);} else { toggleAvisoUxCaja(true);} } else toggleAvisoUxCaja(false); el.totalUnid.value=total; return total; }
+function calcTotal(){
+  const modo=el.contarPor.value;
+  const cant=Math.max(1,parseInt(el.cantidad.value||'1',10));
+  const uxc=Number(lastFicha?.unidades_por_caja||0);
+  let total=cant;
+  if(modo==='c'){
+    if(uxc>0){ total=cant*uxc; toggleAvisoUxCaja(false); }
+    else     { toggleAvisoUxCaja(true); }
+  } else toggleAvisoUxCaja(false);
+  el.totalUnid.value=total; return total;
+}
 el.contarPor.onchange=calcTotal; el.cantidad.oninput=calcTotal;
 
 async function apiGet(url){ const r=await fetch(url); return r.json(); }
@@ -179,7 +203,8 @@ let lookupTimer=null;
 el.key.addEventListener('input',()=>{ clearTimeout(lookupTimer); lookupTimer=setTimeout(lookupProduct,200); });
 
 async function lookupProduct(){
-  const key=el.key.value.trim(); if(!key){ el.product.innerHTML=''; lastFicha=null; calcTotal(); return; }
+  const key=el.key.value.trim();
+  if(!key){ el.product.innerHTML=''; lastFicha=null; calcTotal(); return; }
   el.product.textContent='Buscando…';
   const j=await apiGet(API+'?action=lookup&key='+encodeURIComponent(key));
   if(j.ok){
@@ -200,11 +225,48 @@ async function lookupProduct(){
 }
 
 /* Responsables */
-(async()=>{ const u=await apiGet(API+'?action=users'); if(u.ok){ u.responsables.forEach(n=>{ const o=document.createElement('option'); o.value=o.textContent=n; el.resp.appendChild(o); }); } })();
+(async()=>{
+  const u=await apiGet(API+'?action=users');
+  if(u.ok){
+    u.responsables.forEach(n=>{
+      const o=document.createElement('option'); o.value=o.textContent=n; el.resp.appendChild(o);
+    });
+  }
+})();
 
-/* Escáner */
+/* === Escáner con marco apaisado y contenido === */
 function setLed(state,msg){ el.scanLed.className='led '+(state||'gray'); el.scanMsg.textContent=msg||''; }
-el.scanStart.onclick=async()=>{ try{ if(!qr) qr=new Html5Qrcode('reader'); const cams=await Html5Qrcode.getCameras(); const id=cams?.[0]?.id; if(!id){ setLed('red','Sin cámara'); return;} el.reader.style.display=''; await qr.start(id,{fps:10,qrbox:{width:260,height:160}}, async (txt)=>{ el.key.value=txt.trim(); await new Promise(r=>setTimeout(r,10)); await lookupProduct(); setLed('green','Código leído'); const aviso=el.alertUxCaja.style.display!=='none'; if(AUTO && !aviso){ enviar(true); } else { await stop(); } }, (err)=>{} ); scanning=true; setLed('gray','Escaneando…'); }catch(e){ setLed('red','No se pudo iniciar la cámara'); } };
+
+el.scanStart.onclick=async()=>{
+  try{
+    if(!qr) qr=new Html5Qrcode('reader');
+    const cams=await Html5Qrcode.getCameras();
+    const id=cams?.[0]?.id;
+    if(!id){ setLed('red','Sin cámara'); return; }
+
+    el.reader.style.display='';
+    // ancho disponible y rectángulo horizontal más chico
+    const contW = Math.max(320, el.reader.clientWidth || 720);
+    const qrW   = Math.min(Math.floor(contW * 0.78), 640); // menos ancho
+    const qrH   = Math.round(qrW * 0.36);                  // menos alto
+
+    await qr.start(
+      id,
+      { fps:10, qrbox:{ width:qrW, height:qrH }, videoConstraints:{ facingMode:'environment' } },
+      async (txt)=>{
+        el.key.value=txt.trim();
+        await new Promise(r=>setTimeout(r,10));
+        await lookupProduct();
+        setLed('green','Código leído');
+        const aviso=el.alertUxCaja.style.display!=='none';
+        if(AUTO && !aviso){ enviar(true); } else { await stop(); }
+      },
+      (err)=>{}
+    );
+    scanning=true; setLed('gray','Escaneando…');
+  }catch(e){ setLed('red','No se pudo iniciar la cámara'); }
+};
+
 async function stop(){ try{ if(qr && scanning){ await qr.stop(); scanning=false;} }catch(e){} el.reader.style.display='none'; }
 el.scanStop.onclick=stop;
 el.scanClear.onclick=async()=>{ await stop(); el.key.value=''; lastFicha=null; el.product.innerHTML=''; el.cantidad.value='1'; el.contarPor.value='u'; calcTotal(); setLed('gray','Cámara inactiva'); el.key.focus(); };
