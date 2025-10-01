@@ -1,7 +1,7 @@
 <!-- index.html en GitHub Pages -->
-<meta name="robots" content="noindex,nofollow">
+<meta name="robots" content="noindex,nofollow" />
 <div id="app-root"></div>
-<link rel="preconnect" href="https://unpkg.com">
+<link rel="preconnect" href="https://unpkg.com" />
 <script src="https://unpkg.com/html5-qrcode"></script>
 
 <style>
@@ -36,11 +36,11 @@
 
   #scanBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 
-  /* Visor horizontal, más chico y centrado */
+  /* Visor horizontal, contenido y centrado */
   #reader{
     width:100%;
-    max-width:720px;      /* antes 380px/860px – ahora apaisado y contenido */
-    aspect-ratio:16/9;
+    max-width:720px;      /* ancho máx del visor */
+    aspect-ratio:16/9;    /* apaisado */
     border:1px solid var(--bd);
     border-radius:10px;
     background:#000;
@@ -55,12 +55,14 @@
 </style>
 
 <script>
-/* ==== API (Apps Script /exec) ==== */
+/* ========= API (Apps Script /exec) ========= */
 const API = 'https://script.google.com/macros/s/AKfycbyrhccA9bA5fgjt8Y4vSF5tuwwAbMfPQxn8LRfkgx7JQsfu40EZN1mO84cVdFgIr-ohWg/exec';
-/* ================================= */
+/* ========================================== */
 
 const $e = (sel,root=document)=>root.querySelector(sel);
 const el = {};
+
+/* UI */
 document.getElementById('app-root').innerHTML = `
 <div class="container"><div class="card">
   <h2>Sector Espera – Movimientos</h2>
@@ -86,6 +88,7 @@ document.getElementById('app-root').innerHTML = `
     <div>
       <label>Responsable</label>
       <select id="resp"><option value="">-- Seleccionar --</option></select>
+      <small id="respStatus" class="muted"></small>
     </div>
   </div>
 
@@ -162,22 +165,28 @@ document.getElementById('app-root').innerHTML = `
 `;
 
 const MOV = {val:'Ingreso'}; let AUTO=false, lastFicha=null, qr=null, scanning=false;
-['btnIng','btnEgr','btnAuto','estado','rowDestino','rowMotivo','key','product',
+[
+ 'btnIng','btnEgr','btnAuto','estado','rowDestino','rowMotivo','key','product',
  'scanStart','scanStop','scanClear','scanLed','scanMsg','reader',
- 'contarPor','cantidad','totalUnid','alertUxCaja','oc','opi','obs','resp','enviar','status'
+ 'contarPor','cantidad','totalUnid','alertUxCaja','oc','opi','obs','resp','enviar','status','respStatus'
 ].forEach(id=>el[id]=$e('#'+id));
 
+/* Movimiento */
 function setMov(m){MOV.val=m; el.btnIng.classList.toggle('active',m==='Ingreso'); el.btnEgr.classList.toggle('active',m==='Egreso'); updCond();}
 el.btnIng.onclick=()=>setMov('Ingreso'); el.btnEgr.onclick=()=>setMov('Egreso'); setMov('Ingreso');
 
+/* Automático */
 el.btnAuto.onclick=()=>{ if(el.btnAuto.classList.contains('disabled')) return; AUTO=!AUTO; el.btnAuto.classList.toggle('active',AUTO); el.btnAuto.setAttribute('aria-pressed',AUTO?'true':'false'); };
 
+/* Condicionales por Estado */
 el.estado.onchange=updCond;
-function updCond(){ const esRech=el.estado.value==='Rechazado', esMec=el.estado.value==='Mecanizar';
+function updCond(){
+  const esRech=el.estado.value==='Rechazado', esMec=el.estado.value==='Mecanizar';
   el.rowMotivo.style.display=esRech?'':'none';
   el.rowDestino.style.display=esMec?'':'none';
 }
 
+/* Utilidades */
 function disableAuto(dis,why=''){
   if(dis){ AUTO=false; el.btnAuto.classList.remove('active'); el.btnAuto.classList.add('disabled'); el.btnAuto.style.opacity=.6; el.btnAuto.title=why; }
   else   { el.btnAuto.classList.remove('disabled'); el.btnAuto.style.opacity=1;  el.btnAuto.title=''; }
@@ -196,9 +205,18 @@ function calcTotal(){
 }
 el.contarPor.onchange=calcTotal; el.cantidad.oninput=calcTotal;
 
-async function apiGet(url){ const r=await fetch(url); return r.json(); }
-async function apiPost(body){ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); return r.json(); }
+/* ======== FETCH helpers con anti-cache ======== */
+async function apiGet(url){
+  const sep = url.includes('?') ? '&' : '?';
+  const r = await fetch(url + sep + 'ts=' + Date.now());
+  return r.json();
+}
+async function apiPost(body){
+  const r = await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  return r.json();
+}
 
+/* Lookup por input */
 let lookupTimer=null;
 el.key.addEventListener('input',()=>{ clearTimeout(lookupTimer); lookupTimer=setTimeout(lookupProduct,200); });
 
@@ -224,13 +242,24 @@ async function lookupProduct(){
   calcTotal();
 }
 
-/* Responsables */
+/* ========= Poblar Responsables (anti-cache) ========= */
 (async()=>{
-  const u=await apiGet(API+'?action=users');
-  if(u.ok){
-    u.responsables.forEach(n=>{
-      const o=document.createElement('option'); o.value=o.textContent=n; el.resp.appendChild(o);
-    });
+  const info=(m)=>{ if(el.respStatus) el.respStatus.textContent=m||''; };
+  try{
+    info('Cargando responsables…');
+    const u=await apiGet(API+'?action=users');
+    if(u.ok && Array.isArray(u.responsables)){
+      u.responsables.forEach(n=>{
+        const o=document.createElement('option'); o.value=o.textContent=n; el.resp.appendChild(o);
+      });
+      info('');
+    }else{
+      info('No se recibieron responsables');
+      console.warn('users ->', u);
+    }
+  }catch(err){
+    info('No se pudo cargar responsables');
+    console.error(err);
   }
 })();
 
@@ -245,10 +274,10 @@ el.scanStart.onclick=async()=>{
     if(!id){ setLed('red','Sin cámara'); return; }
 
     el.reader.style.display='';
-    // ancho disponible y rectángulo horizontal más chico
+    // ancho disponible y rectángulo horizontal moderado
     const contW = Math.max(320, el.reader.clientWidth || 720);
-    const qrW   = Math.min(Math.floor(contW * 0.78), 640); // menos ancho
-    const qrH   = Math.round(qrW * 0.36);                  // menos alto
+    const qrW   = Math.min(Math.floor(contW * 0.78), 640); // ancho del marco
+    const qrH   = Math.round(qrW * 0.36);                  // alto del marco
 
     await qr.start(
       id,
