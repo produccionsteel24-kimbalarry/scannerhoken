@@ -153,16 +153,48 @@ function toggleAvisoUxCaja(show){ el.alertUxCaja.style.display=show?'':'none'; d
 function calcTotal(){ const modo=el.contarPor.value, cant=Math.max(1,parseInt(el.cantidad.value||'1',10)); const uxc=Number(lastFicha?.unidades_por_caja||0); let total=cant; if(modo==='c'){ if(uxc>0){ total=cant*uxc; toggleAvisoUxCaja(false);} else { toggleAvisoUxCaja(true);} } else toggleAvisoUxCaja(false); el.totalUnid.value=total; return total; }
 el.contarPor.onchange=calcTotal; el.cantidad.oninput=calcTotal;
 
-/* Fetch helpers */
-async function apiGet(path){ const url = API + path + (path.includes('?')?'&':'?') + 't=' + Date.now(); const r=await fetch(url,{headers:{'Accept':'application/json'}}); const tx=await r.text(); try{ return JSON.parse(tx);}catch{ return {ok:false,error:'NON_JSON',raw:tx.slice(0,200)}; } }
-async function apiPost(body){ const r=await fetch(API+'?t='+Date.now(),{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(body)}); const tx=await r.text(); try{ return JSON.parse(tx);}catch{ return {ok:false,error:'NON_JSON',raw:tx.slice(0,200)}; } }
+/* ===== Fetch helpers ROBUSTOS ===== */
+async function apiGet(path){
+  const url = API + path + (path.includes('?')?'&':'?') + 't=' + Date.now();
+  const r = await fetch(url, { headers:{'Accept':'application/json'}, mode:'cors', credentials:'omit' });
+  const text = await r.text();
+  if (!r.ok) { console.error('apiGet HTTP', r.status, text); throw new Error(`HTTP ${r.status}`); }
+  try { return JSON.parse(text); }
+  catch { console.error('apiGet NON_JSON', text); throw new Error('NON_JSON'); }
+}
+async function apiPost(body){
+  const url = API + '?t=' + Date.now();
+  const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'}, body:JSON.stringify(body), mode:'cors', credentials:'omit' });
+  const text = await r.text();
+  if (!r.ok) { console.error('apiPost HTTP', r.status, text); throw new Error(`HTTP ${r.status}`); }
+  try { return JSON.parse(text); }
+  catch { console.error('apiPost NON_JSON', text); throw new Error('NON_JSON'); }
+}
 
-/* Ping + responsables */
+/* Ping + responsables (con handling claro) */
 (async ()=>{
-  const ping = await apiGet('?action=ping'); el.apiBadge.textContent = ping?.ok ? 'API OK' : 'API ERROR'; el.apiBadge.style.color = ping?.ok ? '#0a0' : '#a00';
-  const u = await apiGet('?action=users');
-  if(u.ok && Array.isArray(u.responsables)){ u.responsables.forEach(n=>{ const o=document.createElement('option'); o.value=o.textContent=n; el.resp.appendChild(o); }); el.respError.style.display='none'; }
-  else { el.respError.style.display=''; el.respError.textContent = 'No se pudo cargar responsables' + (u?.error?` (${u.error})`: ''); }
+  try{
+    const ping = await apiGet('?action=ping');
+    el.apiBadge.textContent = ping?.ok ? 'API OK' : 'API ERROR';
+    el.apiBadge.style.color = ping?.ok ? '#0a0' : '#a00';
+  }catch(e){
+    el.apiBadge.textContent = 'API ERROR';
+    el.apiBadge.style.color = '#a00';
+  }
+
+  try{
+    const u = await apiGet('?action=users');
+    if(u.ok && Array.isArray(u.responsables)){
+      u.responsables.forEach(n=>{ const o=document.createElement('option'); o.value=o.textContent=n; el.resp.appendChild(o); });
+      el.respError.style.display='none';
+    }else{
+      el.respError.style.display='';
+      el.respError.textContent = 'No se pudo cargar responsables' + (u?.error?` (${u.error})`: '');
+    }
+  }catch(e){
+    el.respError.style.display='';
+    el.respError.textContent = 'No se pudo cargar responsables (red/API)';
+  }
 })();
 
 /* Lookup producto */
@@ -172,13 +204,19 @@ async function lookupProduct(){
   const key=el.key.value.trim();
   if(!key){ el.product.innerHTML=''; lastFicha=null; calcTotal(); return; }
   el.product.textContent='Buscando…';
-  const j=await apiGet('?action=lookup&key='+encodeURIComponent(key));
-  if(j.ok){
-    lastFicha=j.ficha;
-    const desc = j.ficha.descripcion ? `<br><b>Descripción:</b> ${j.ficha.descripcion}` : '';
-    const uxc  = j.ficha.unidades_por_caja ? (' | U/Caja: '+j.ficha.unidades_por_caja) : '';
-    el.product.innerHTML = `<small class="mono">Modelo: <b>${j.ficha.modelo}</b> | Código: <b>${j.ficha.codigo}</b><br>Material: ${j.ficha.material} | Color: ${j.ficha.color} | Medidas: ${j.ficha.medidas}${uxc}${desc}</small>`;
-  } else { lastFicha=null; el.product.innerHTML='<small style="color:#b00">No encontrado en Maestros</small>'; }
+  try{
+    const j=await apiGet('?action=lookup&key='+encodeURIComponent(key));
+    if(j.ok){
+      lastFicha=j.ficha;
+      const desc = j.ficha.descripcion ? `<br><b>Descripción:</b> ${j.ficha.descripcion}` : '';
+      const uxc  = j.ficha.unidades_por_caja ? (' | U/Caja: '+j.ficha.unidades_por_caja) : '';
+      el.product.innerHTML = `<small class="mono">Modelo: <b>${j.ficha.modelo}</b> | Código: <b>${j.ficha.codigo}</b><br>Material: ${j.ficha.material} | Color: ${j.ficha.color} | Medidas: ${j.ficha.medidas}${uxc}${desc}</small>`;
+    } else {
+      lastFicha=null; el.product.innerHTML='<small style="color:#b00">No encontrado en Maestros</small>';
+    }
+  }catch(e){
+    lastFicha=null; el.product.innerHTML='<small style="color:#b00">Error de API</small>';
+  }
   calcTotal();
 }
 
@@ -186,12 +224,10 @@ async function lookupProduct(){
 function setLed(state,msg){ el.scanLed.className='led '+(state||'gray'); el.scanMsg.textContent=msg||''; }
 
 async function startCameraWith(config){
-  // calcular ancho contenedor y un marco chato
   const cardW = el.reader.parentElement.getBoundingClientRect().width || 720;
   const contW = Math.max(320, Math.min(cardW, 720));
   const qrW   = Math.min(Math.floor(contW * 0.85), 640);
-  const qrH   = Math.max(80, Math.round(qrW * 0.22)); // bajo
-  // abrir el visor dando altura real antes de start()
+  const qrH   = Math.max(80, Math.round(qrW * 0.22));
   el.reader.style.height = qrH + 'px';
 
   await qr.start(
@@ -207,11 +243,9 @@ el.scanStart.onclick = async () => {
     if(!qr) qr = new Html5Qrcode('reader');
     setLed('gray','Solicitando cámara…');
 
-    // 1) intentar trasera explícita
     try{ await startCameraWith({ facingMode:{ exact:'environment' } }); scanning=true; setLed('gray','Escaneando…'); return; }
-    catch(_){ /* fallback */ }
+    catch(_){}
 
-    // 2) enumerar cámaras y elegir trasera si existe
     const cams = await Html5Qrcode.getCameras();
     if(!cams || !cams.length){ setLed('red','No se encontró cámara'); el.reader.style.height='0px'; return; }
     const back = cams.find(c=>/back|rear|environment|trasera/i.test(c.label||'')) || cams[0];
@@ -238,13 +272,17 @@ async function enviar(auto){
   if(!payload.responsable){ el.status.textContent='Seleccione Responsable'; return; }
 
   el.status.textContent = auto ? 'Registrando (auto)…' : 'Procesando…';
-  const j = await apiPost(payload);
-  if(j.ok){
-    el.status.innerHTML = `✅ ${j.Movimiento} ${j.Cantidad}u — ${j.ficha.modelo} (${j.ficha.codigo}) — Estado: ${j.Estado}${j.Dest?' → '+j.Dest:''}. Saldo: ${j.saldo}`;
-    if(auto){ el.cantidad.value='1'; el.key.value=''; lastFicha=null; el.product.innerHTML=''; calcTotal(); setLed('gray','Listo para siguiente'); }
-    else     { el.cantidad.value='1'; el.obs.value=''; }
-  } else {
-    el.status.textContent = '⚠️ '+(j.error || 'Error inesperado') + (j.raw ? ' · pista: '+ j.raw.replace(/\s+/g,' ').slice(0,80) : '');
+  try{
+    const j = await apiPost(payload);
+    if(j.ok){
+      el.status.innerHTML = `✅ ${j.Movimiento} ${j.Cantidad}u — ${j.ficha.modelo} (${j.ficha.codigo}) — Estado: ${j.Estado}${j.Dest?' → '+j.Dest:''}. Saldo: ${j.saldo}`;
+      if(auto){ el.cantidad.value='1'; el.key.value=''; lastFicha=null; el.product.innerHTML=''; calcTotal(); setLed('gray','Listo para siguiente'); }
+      else     { el.cantidad.value='1'; el.obs.value=''; }
+    } else {
+      el.status.textContent = '⚠️ '+(j.error || 'Error inesperado') + (j.raw ? ' · pista: '+ j.raw.replace(/\s+/g,' ').slice(0,80) : '');
+    }
+  }catch(e){
+    el.status.textContent = '⚠️ Error de red/API';
   }
   if(auto && !scanning && AUTO) el.scanStart.click();
 }
