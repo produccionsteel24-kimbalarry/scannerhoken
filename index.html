@@ -36,18 +36,16 @@
 
   #scanBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 
-  /* Visor tipo “banda” 1D: colapsado, se abre fijando height desde JS */
+  /* Visor: inicia colapsado; JS le da altura explícita al empezar */
   #reader{
-    position:relative;
     width:100%;
     max-width:720px;
-    height:0;               /* colapsado hasta iniciar */
+    height:0;              /* <- clave */
     overflow:hidden;
     border:1px solid var(--bd);
     border-radius:10px;
     background:#000;
     margin:8px auto 12px;
-    display:none;           /* <- seguirá oculto hasta que lo abramos con JS */
   }
   @media (max-width:520px){
     #reader{ max-width:100%; }
@@ -63,15 +61,14 @@
 </style>
 
 <script>
-/* ==== API (Apps Script /exec) ==== */
-const API = 'https://script.google.com/macros/s/AKfycbyBN88CHPAkwjYKAZScXQZ24-BfHkqImjAt1br8gpv0s8espwtWDNIt-lKmgdwdmJubsg/exec';
+/* ==== API (/exec) ==== */
+const API = 'https://script.google.com/macros/s/AKfycbxLaU1rLD4BOE-8vXytIiwc34mU0WyU3cHOXwULVdA_62ZE6A5qrfnbC2fchUykVjeAug/exec';
 
 const $e = (sel,root=document)=>root.querySelector(sel);
 const el = {};
 document.getElementById('app-root').innerHTML = `
 <div class="container"><div class="card">
   <h2>Sector Espera – Movimientos <span id="apiBadge" class="badge">API…</span></h2>
-
   <div class="bar">
     <div class="pillbar">
       <span class="pill" id="btnIng">Ingreso</span>
@@ -97,28 +94,8 @@ document.getElementById('app-root').innerHTML = `
     </div>
   </div>
 
-  <div class="row" id="rowDestino" style="display:none">
-    <div>
-      <label>Destino mecanizado (si Mecanizar)</label>
-      <select id="destino"><option>Bandas</option><option>Luján</option></select>
-    </div>
-  </div>
-
-  <div class="row" id="rowMotivo" style="display:none">
-    <div>
-      <label>Motivo (si Rechazado)</label>
-      <select id="motivo">
-        <option>Fuera de medida</option><option>Color</option>
-        <option>Tornillos incorrectos</option><option>Otro</option>
-      </select>
-    </div>
-  </div>
-
   <div class="row">
-    <div>
-      <label>Código o Modelo</label>
-      <input id="key" placeholder="Escaneá o escribí el Código/Modelo" />
-    </div>
+    <div><label>Código o Modelo</label><input id="key" placeholder="Escaneá o escribí el Código/Modelo" /></div>
   </div>
 
   <div class="row"><div id="product"></div></div>
@@ -140,72 +117,55 @@ document.getElementById('app-root').innerHTML = `
       <select id="contarPor"><option value="u">Unidades</option><option value="c">Cajas</option></select>
     </div>
     <div class="inline">
-      <div style="flex:1">
-        <label>Cantidad</label>
-        <input id="cantidad" type="number" min="1" step="1" value="1" />
-      </div>
-      <div>
-        <label>Total unidades</label>
-        <input id="totalUnid" type="number" readonly value="1" />
-      </div>
+      <div style="flex:1"><label>Cantidad</label><input id="cantidad" type="number" min="1" step="1" value="1" /></div>
+      <div><label>Total unidades</label><input id="totalUnid" type="number" readonly value="1" /></div>
     </div>
   </div>
 
   <div class="row" id="alertUxCaja" style="display:none">
-    <div class="alert">
-      Este modelo no tiene <b>Unidades_por_caja</b> definido en <b>Maestros</b>.
-      Cambiá a <b>“Unidades”</b> o definí el valor en la hoja. El modo <b>Automático</b> se desactiva.
-    </div>
+    <div class="alert">Este modelo no tiene <b>Unidades_por_caja</b>. Cambiá a <b>Unidades</b> o completalo en la hoja.</div>
   </div>
 
   <div class="row"><div><label>OC (opcional)</label><input id="oc" /></div></div>
   <div class="row"><div><label>OPI (opcional)</label><input id="opi" /></div></div>
   <div class="row"><div><label>Observaciones (opcional)</label><textarea id="obs" rows="2"></textarea></div></div>
 
-  <div class="row">
-    <div class="actions"><button id="enviar">✓ Registrar</button></div>
-    <div id="status"></div>
-  </div>
+  <div class="row"><div class="actions"><button id="enviar">✓ Registrar</button></div><div id="status"></div></div>
 </div></div>
 `;
 
 const MOV = {val:'Ingreso'}; let AUTO=false, lastFicha=null, qr=null, scanning=false;
 [
- 'btnIng','btnEgr','btnAuto','estado','rowDestino','rowMotivo','key','product',
- 'scanStart','scanStop','scanClear','scanLed','scanMsg','reader',
- 'contarPor','cantidad','totalUnid','alertUxCaja','oc','opi','obs','resp','enviar','status','respError','apiBadge'
+ 'btnIng','btnEgr','btnAuto','estado','key','product','scanStart','scanStop','scanClear',
+ 'scanLed','scanMsg','reader','contarPor','cantidad','totalUnid','alertUxCaja','oc','opi','obs','resp','enviar','status','respError','apiBadge'
 ].forEach(id=>el[id]=$e('#'+id));
 
-function setMov(m){MOV.val=m; el.btnIng.classList.toggle('active',m==='Ingreso'); el.btnEgr.classList.toggle('active',m==='Egreso'); updCond();}
+/* Movimiento */
+function setMov(m){MOV.val=m; el.btnIng.classList.toggle('active',m==='Ingreso'); el.btnEgr.classList.toggle('active',m==='Egreso');}
 el.btnIng.onclick=()=>setMov('Ingreso'); el.btnEgr.onclick=()=>setMov('Egreso'); setMov('Ingreso');
 
+/* Automático */
 el.btnAuto.onclick=()=>{ if(el.btnAuto.classList.contains('disabled')) return; AUTO=!AUTO; el.btnAuto.classList.toggle('active',AUTO); el.btnAuto.setAttribute('aria-pressed',AUTO?'true':'false'); };
 
-el.estado.onchange=updCond;
-function updCond(){ const esRech=el.estado.value==='Rechazado', esMec=el.estado.value==='Mecanizar'; el.rowMotivo.style.display=esRech?'':'none'; el.rowDestino.style.display=esMec?'':'none'; }
-
+/* Totales */
 function disableAuto(dis,why=''){ if(dis){AUTO=false; el.btnAuto.classList.remove('active'); el.btnAuto.classList.add('disabled'); el.btnAuto.style.opacity=.6; el.btnAuto.title=why;} else {el.btnAuto.classList.remove('disabled'); el.btnAuto.style.opacity=1; el.btnAuto.title='';}}
-function toggleAvisoUxCaja(show){ el.alertUxCaja.style.display=show?'':'none'; disableAuto(show,'Falta Unidades_por_caja para Cajas'); }
+function toggleAvisoUxCaja(show){ el.alertUxCaja.style.display=show?'':'none'; disableAuto(show,'Falta Unidades_por_caja'); }
 function calcTotal(){ const modo=el.contarPor.value, cant=Math.max(1,parseInt(el.cantidad.value||'1',10)); const uxc=Number(lastFicha?.unidades_por_caja||0); let total=cant; if(modo==='c'){ if(uxc>0){ total=cant*uxc; toggleAvisoUxCaja(false);} else { toggleAvisoUxCaja(true);} } else toggleAvisoUxCaja(false); el.totalUnid.value=total; return total; }
 el.contarPor.onchange=calcTotal; el.cantidad.oninput=calcTotal;
 
-async function apiGet(path){ const url=API+path+(path.includes('?')?'&':'?')+'t='+Date.now(); const r=await fetch(url,{headers:{'Accept':'application/json'}}); const t=await r.text(); try{return JSON.parse(t);}catch(_){return {ok:false,error:'NON_JSON',raw:t.slice(0,200)};}}
-async function apiPost(body){ const r=await fetch(API+'?t='+Date.now(),{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(body)}); const t=await r.text(); try{return JSON.parse(t);}catch(_){return {ok:false,error:'NON_JSON',raw:t.slice(0,200)};}}
+/* Fetch helpers */
+async function apiGet(path){ const url = API + path + (path.includes('?')?'&':'?') + 't=' + Date.now(); const r=await fetch(url,{headers:{'Accept':'application/json'}}); const tx=await r.text(); try{ return JSON.parse(tx);}catch{ return {ok:false,error:'NON_JSON',raw:tx.slice(0,200)}; } }
+async function apiPost(body){ const r=await fetch(API+'?t='+Date.now(),{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(body)}); const tx=await r.text(); try{ return JSON.parse(tx);}catch{ return {ok:false,error:'NON_JSON',raw:tx.slice(0,200)}; } }
 
+/* Ping + responsables */
 (async ()=>{
-  const ping = await apiGet('?action=ping');
-  el.apiBadge.textContent = ping?.ok ? 'API OK' : 'API ERROR';
-  el.apiBadge.style.color = ping?.ok ? '#0a0' : '#a00';
-
+  const ping = await apiGet('?action=ping'); el.apiBadge.textContent = ping?.ok ? 'API OK' : 'API ERROR'; el.apiBadge.style.color = ping?.ok ? '#0a0' : '#a00';
   const u = await apiGet('?action=users');
-  if(u.ok && Array.isArray(u.responsables)){
-    u.responsables.forEach(n=>{ const o=document.createElement('option'); o.value=o.textContent=n; el.resp.appendChild(o); });
-    el.respError.style.display='none';
-  }else{
-    el.respError.style.display=''; el.respError.textContent='No se pudo cargar responsables ' + (u.error ? `(${u.error})` : '') + (u.raw ? ' · pista: ' + u.raw.replace(/\s+/g,' ').slice(0,80) : '');
-  }
+  if(u.ok && Array.isArray(u.responsables)){ u.responsables.forEach(n=>{ const o=document.createElement('option'); o.value=o.textContent=n; el.resp.appendChild(o); }); el.respError.style.display='none'; }
+  else { el.respError.style.display=''; el.respError.textContent = 'No se pudo cargar responsables' + (u?.error?` (${u.error})`: ''); }
 })();
 
+/* Lookup producto */
 let lookupTimer=null;
 el.key.addEventListener('input',()=>{ clearTimeout(lookupTimer); lookupTimer=setTimeout(lookupProduct,200); });
 async function lookupProduct(){
@@ -217,86 +177,63 @@ async function lookupProduct(){
     lastFicha=j.ficha;
     const desc = j.ficha.descripcion ? `<br><b>Descripción:</b> ${j.ficha.descripcion}` : '';
     const uxc  = j.ficha.unidades_por_caja ? (' | U/Caja: '+j.ficha.unidades_por_caja) : '';
-    el.product.innerHTML =
-      `<small class="mono">
-         Modelo: <b>${j.ficha.modelo}</b> | Código: <b>${j.ficha.codigo}</b><br>
-         Material: ${j.ficha.material} | Color: ${j.ficha.color} | Medidas: ${j.ficha.medidas}${uxc}
-         ${desc}
-       </small>`;
-  } else {
-    lastFicha=null;
-    el.product.innerHTML='<small style="color:#b00">No encontrado en Maestros</small>';
-  }
+    el.product.innerHTML = `<small class="mono">Modelo: <b>${j.ficha.modelo}</b> | Código: <b>${j.ficha.codigo}</b><br>Material: ${j.ficha.material} | Color: ${j.ficha.color} | Medidas: ${j.ficha.medidas}${uxc}${desc}</small>`;
+  } else { lastFicha=null; el.product.innerHTML='<small style="color:#b00">No encontrado en Maestros</small>'; }
   calcTotal();
 }
 
-/* === ESCÁNER 1D (banda) === */
+/* ===== ESCÁNER: altura explícita + fallback de cámara ===== */
 function setLed(state,msg){ el.scanLed.className='led '+(state||'gray'); el.scanMsg.textContent=msg||''; }
+
+async function startCameraWith(config){
+  // calcular ancho contenedor y un marco chato
+  const cardW = el.reader.parentElement.getBoundingClientRect().width || 720;
+  const contW = Math.max(320, Math.min(cardW, 720));
+  const qrW   = Math.min(Math.floor(contW * 0.85), 640);
+  const qrH   = Math.max(80, Math.round(qrW * 0.22)); // bajo
+  // abrir el visor dando altura real antes de start()
+  el.reader.style.height = qrH + 'px';
+
+  await qr.start(
+    config,
+    { fps:10, qrbox:{ width:qrW, height:qrH }, videoConstraints:{ facingMode:'environment' } },
+    async (txt)=>{ el.key.value=txt.trim(); await new Promise(r=>setTimeout(r,10)); await lookupProduct(); setLed('green','Código leído'); const aviso = el.alertUxCaja.style.display!=='none'; if(AUTO && !aviso){ enviar(true);} else { await stop(); } },
+    (_)=>{}
+  );
+}
 
 el.scanStart.onclick = async () => {
   try{
     if(!qr) qr = new Html5Qrcode('reader');
-
-    // Dimensiones banda
-    const cardW = el.reader.parentElement.getBoundingClientRect().width || 720;
-    const contW = Math.max(320, Math.min(cardW, 720));
-    const boxW  = Math.min(Math.floor(contW * 0.85), 640);
-    const boxH  = Math.max(80, Math.round(boxW * 0.22));
-
-    // **MOSTRAR VISOR** y fijar altura antes de iniciar
-    el.reader.style.display = '';
-    el.reader.style.height  = boxH + 'px';
     setLed('gray','Solicitando cámara…');
 
-    // Preferir trasera; fallback por enumeración
-    try{
-      await qr.start(
-        { facingMode:{ exact:'environment' } },
-        { fps:10, qrbox:{ width:boxW, height:boxH }, videoConstraints:{ facingMode:'environment' } },
-        async (txt)=>{ el.key.value=txt.trim(); await new Promise(r=>setTimeout(r,10)); await lookupProduct(); setLed('green','Código leído'); const aviso=el.alertUxCaja.style.display!=='none'; if(AUTO && !aviso){ enviar(true); } else { await stop(); } },
-        (_)=>{}
-      );
-      scanning=true; setLed('gray','Escaneando…'); return;
-    }catch(_){}
+    // 1) intentar trasera explícita
+    try{ await startCameraWith({ facingMode:{ exact:'environment' } }); scanning=true; setLed('gray','Escaneando…'); return; }
+    catch(_){ /* fallback */ }
 
-    const cams=await Html5Qrcode.getCameras();
-    if(!cams || !cams.length){ setLed('red','No se encontró cámara'); await stop(); return; }
+    // 2) enumerar cámaras y elegir trasera si existe
+    const cams = await Html5Qrcode.getCameras();
+    if(!cams || !cams.length){ setLed('red','No se encontró cámara'); el.reader.style.height='0px'; return; }
     const back = cams.find(c=>/back|rear|environment|trasera/i.test(c.label||'')) || cams[0];
-
-    await qr.start(
-      back.id || back,
-      { fps:10, qrbox:{ width:boxW, height:boxH }, videoConstraints:{ facingMode:'environment' } },
-      async (txt)=>{ el.key.value=txt.trim(); await new Promise(r=>setTimeout(r,10)); await lookupProduct(); setLed('green','Código leído'); const aviso=el.alertUxCaja.style.display!=='none'; if(AUTO && !aviso){ enviar(true);} else { await stop(); } },
-      (_)=>{}
-    );
+    await startCameraWith(back.id || back);
     scanning=true; setLed('gray','Escaneando…');
   }catch(e){
-    setLed('red','No se pudo iniciar la cámara');
-    await stop();
+    if(String(e).match(/NotAllowedError|Permission/)) setLed('red','Permiso de cámara denegado');
+    else if(String(e).match(/NotFoundError|no camera/i)) setLed('red','No hay cámara disponible');
+    else setLed('red','No se pudo iniciar la cámara');
+    el.reader.style.height='0px';
   }
 };
 
-async function stop(){
-  try{ if(qr && scanning){ await qr.stop(); scanning=false; } }catch(e){}
-  el.reader.style.height  = '0px';
-  el.reader.style.display = 'none';      // **OCULTAR VISOR**
-  setLed('gray','Cámara inactiva');
-}
-el.scanStop.onclick = stop;
-el.scanClear.onclick = async()=>{ await stop(); el.key.value=''; lastFicha=null; el.product.innerHTML=''; el.cantidad.value='1'; el.contarPor.value='u'; calcTotal(); el.key.focus(); };
+async function stop(){ try{ if(qr && scanning){ await qr.stop(); scanning=false; } }catch(e){} el.reader.style.height='0px'; setLed('gray','Cámara inactiva'); }
+el.scanStop.onclick=stop;
+el.scanClear.onclick=async()=>{ await stop(); el.key.value=''; lastFicha=null; el.product.innerHTML=''; el.cantidad.value='1'; el.contarPor.value='u'; calcTotal(); el.key.focus(); };
 
 /* Registrar */
 el.enviar.onclick=()=>enviar(false);
 async function enviar(auto){
   const total=calcTotal();
-  const payload={
-    mov: MOV.val, estado: el.estado.value,
-    motivo: (el.estado.value==='Rechazado') ? '' : '',
-    destino: (el.estado.value==='Mecanizar') ? '' : '',
-    key: el.key.value.trim(), cantidad: String(total),
-    oc: el.oc.value.trim(), opi: el.opi.value.trim(),
-    obs: el.obs.value.trim(), responsable: el.resp.value.trim()
-  };
+  const payload={ mov: MOV.val, estado: el.estado.value, motivo:'', destino:'', key: el.key.value.trim(), cantidad: String(total), oc: el.oc.value.trim(), opi: el.opi.value.trim(), obs: el.obs.value.trim(), responsable: el.resp.value.trim() };
   if(!payload.key){ el.status.textContent='Ingrese/escanee Código/Modelo'; return; }
   if(!payload.responsable){ el.status.textContent='Seleccione Responsable'; return; }
 
