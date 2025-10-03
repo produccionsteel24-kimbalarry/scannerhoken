@@ -36,7 +36,7 @@
 
   #scanBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 
-  /* Visor horizontal, contenido y centrado */
+  /* Visor seguro en desktop y móvil */
   #reader{
     width:100%;
     max-width:720px;
@@ -45,7 +45,15 @@
     border-radius:10px;
     background:#000;
     margin:0 auto;
+    min-height:180px; /* evita altura 0 en móvil */
     display:none;
+  }
+  @media (max-width:520px){
+    #reader{
+      max-width:100%;
+      aspect-ratio:4/3;  /* un poco más alto en móvil */
+      min-height:200px;
+    }
   }
 
   .led{width:12px;height:12px;border-radius:50%;border:1px solid #ccc;display:inline-block}
@@ -58,9 +66,9 @@
 </style>
 
 <script>
-/* ==== API (Apps Script /exec) – usa tu nueva URL ==== */
-const API = 'https://script.google.com/macros/s/AKfycbyVgbPdlyr43ykQBJJ7PitLUaQQuqJ8-tvPKST3TpvsOMmdD20ALN9M7oo0-iOxbv64iw/exec';
-/* ================================================ */
+/* ==== API (Apps Script /exec) – NUEVO EXEC ==== */
+const API = 'https://script.google.com/macros/s/AKfycbyrhccA9bA5fgjt8Y4vSF5tuwwAbMfPQxn8LRfkgx7JQsfu40EZN1mO84cVdFgIr-ohWg/exec';
+/* ============================================== */
 
 const $e = (sel,root=document)=>root.querySelector(sel);
 const el = {};
@@ -207,12 +215,10 @@ async function apiPost(body){
 
 /* Chequeo API + responsables */
 (async ()=>{
-  // ping
   const ping = await apiGet('?action=ping');
   el.apiBadge.textContent = ping?.ok ? 'API OK' : 'API ERROR';
   el.apiBadge.style.color = ping?.ok ? '#0a0' : '#a00';
 
-  // responsables
   const u = await apiGet('?action=users');
   if(u.ok && Array.isArray(u.responsables)){
     u.responsables.forEach(n=>{ const o=document.createElement('option'); o.value=o.textContent=n; el.resp.appendChild(o); });
@@ -248,22 +254,53 @@ async function lookupProduct(){
   calcTotal();
 }
 
-/* Escáner (marco apaisado moderado) */
+/* === Escáner: móvil first (trasera + tamaños dinámicos) === */
 function setLed(state,msg){ el.scanLed.className='led '+(state||'gray'); el.scanMsg.textContent=msg||''; }
-el.scanStart.onclick=async()=>{ try{
-  if(!qr) qr=new Html5Qrcode('reader');
-  const cams=await Html5Qrcode.getCameras(); const id=cams?.[0]?.id;
-  if(!id){ setLed('red','Sin cámara'); return;}
-  el.reader.style.display='';
-  const contW=Math.max(320, el.reader.clientWidth||720);
-  const qrW = Math.min(Math.floor(contW*0.78), 640);
-  const qrH = Math.round(qrW*0.36);
-  await qr.start(id,{fps:10,qrbox:{width:qrW,height:qrH},videoConstraints:{facingMode:'environment'}},
-    async (txt)=>{ el.key.value=txt.trim(); await new Promise(r=>setTimeout(r,10)); await lookupProduct(); setLed('green','Código leído'); const aviso=el.alertUxCaja.style.display!=='none'; if(AUTO && !aviso){ enviar(true);} else { await stop(); } },
+
+async function startWithConfig(cameraConfig){
+  const contW = Math.max(320, el.reader.clientWidth || window.innerWidth - 40);
+  const qrW = Math.min(Math.floor(contW * (window.innerWidth < 520 ? 0.80 : 0.78)), 560);
+  const qrH = Math.round(qrW * (window.innerWidth < 520 ? 0.75 : 0.36));
+
+  await qr.start(
+    cameraConfig,
+    { fps:10, qrbox:{ width:qrW, height:qrH }, videoConstraints:{ facingMode:'environment' } },
+    async (txt)=>{
+      el.key.value=txt.trim();
+      await new Promise(r=>setTimeout(r,10));
+      await lookupProduct();
+      setLed('green','Código leído');
+      const aviso = el.alertUxCaja && el.alertUxCaja.style.display!=='none';
+      if(AUTO && !aviso){ enviar(true); } else { await stop(); }
+    },
     (_)=>{}
   );
+}
+
+el.scanStart.onclick=async()=>{ try{
+  if(!qr) qr=new Html5Qrcode('reader');
+  el.reader.style.display=''; setLed('gray','Solicitando cámara…');
+
+  // 1) Intento con trasera exacta
+  try{
+    await startWithConfig({ facingMode: { exact:'environment' } });
+    scanning=true; setLed('gray','Escaneando…'); return;
+  }catch(e){ /* fallback */ }
+
+  // 2) Enumeración y elección de “back” o primera
+  const cams=await Html5Qrcode.getCameras();
+  if(!cams || !cams.length){ setLed('red','No se encontró cámara (permiso?)'); el.reader.style.display='none'; return; }
+  const back = cams.find(c=>/back|rear|environment|trasera/i.test(c.label||'')) || cams[0];
+
+  await startWithConfig(back.id || back);
   scanning=true; setLed('gray','Escaneando…');
-}catch(e){ setLed('red','No se pudo iniciar la cámara'); } };
+}catch(e){
+  if (String(e).match(/NotAllowedError|Permission/)) setLed('red','Permiso de cámara denegado');
+  else if (String(e).match(/NotFoundError|no camera/i)) setLed('red','No hay cámara disponible');
+  else setLed('red','No se pudo iniciar la cámara');
+  el.reader.style.display='none';
+}};
+
 async function stop(){ try{ if(qr && scanning){ await qr.stop(); scanning=false;} }catch(e){} el.reader.style.display='none'; }
 el.scanStop.onclick=stop;
 el.scanClear.onclick=async()=>{ await stop(); el.key.value=''; lastFicha=null; el.product.innerHTML=''; el.cantidad.value='1'; el.contarPor.value='u'; calcTotal(); setLed('gray','Cámara inactiva'); el.key.focus(); };
