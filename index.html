@@ -1,4 +1,4 @@
-<!-- index.html (GitHub Pages) -->
+<!-- index.html en GitHub Pages -->
 <meta name="robots" content="noindex,nofollow">
 <div id="app-root"></div>
 <link rel="preconnect" href="https://unpkg.com">
@@ -36,18 +36,22 @@
 
   #scanBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 
-  /* Visor: inicia colapsado; JS le pone altura explícita al empezar */
+  /* Visor tipo “banda” 1D: colapsado, se abre fijando height desde JS */
   #reader{
+    position:relative;
     width:100%;
     max-width:720px;
-    height:0;
+    height:0;               /* colapsado hasta iniciar */
     overflow:hidden;
     border:1px solid var(--bd);
     border-radius:10px;
     background:#000;
     margin:8px auto 12px;
+    display:none;           /* oculto hasta iniciar */
   }
-  @media (max-width:520px){ #reader{ max-width:100%; } }
+  @media (max-width:520px){
+    #reader{ max-width:100%; }
+  }
 
   .led{width:12px;height:12px;border-radius:50%;border:1px solid #ccc;display:inline-block}
   .led.red{background:#e03a3a}.led.green{background:#19a34a}.led.gray{background:#bbb}
@@ -59,10 +63,10 @@
 </style>
 
 <script>
-/* ====== API: usá tu /exec NUEVO que ya probaste ====== */
+/* ==== API (/exec) ==== */
 const API = 'https://script.google.com/macros/s/AKfycbydNmLNEOmACUDAMS2bKw9ztYgNCCZupOg-TEPXMouPlav0wBkBNB9lI2ESw1a3oID5Pw/exec';
 
-const $e = (s,root=document)=>root.querySelector(s);
+const $e = (sel,root=document)=>root.querySelector(sel);
 const el = {};
 document.getElementById('app-root').innerHTML = `
 <div class="container"><div class="card">
@@ -93,7 +97,10 @@ document.getElementById('app-root').innerHTML = `
   </div>
 
   <div class="row">
-    <div><label>Código o Modelo</label><input id="key" placeholder="Escaneá o escribí el Código/Modelo" /></div>
+    <div>
+      <label>Código o Modelo</label>
+      <input id="key" placeholder="Escaneá o escribí el Código/Modelo" />
+    </div>
   </div>
 
   <div class="row"><div id="product"></div></div>
@@ -139,7 +146,7 @@ const MOV = {val:'Ingreso'}; let AUTO=false, lastFicha=null, qr=null, scanning=f
 ].forEach(id=>el[id]=$e('#'+id));
 
 /* Movimiento */
-function setMov(m){ MOV.val=m; el.btnIng.classList.toggle('active',m==='Ingreso'); el.btnEgr.classList.toggle('active',m==='Egreso'); }
+function setMov(m){MOV.val=m; el.btnIng.classList.toggle('active',m==='Ingreso'); el.btnEgr.classList.toggle('active',m==='Egreso');}
 el.btnIng.onclick=()=>setMov('Ingreso'); el.btnEgr.onclick=()=>setMov('Egreso'); setMov('Ingreso');
 
 /* Automático */
@@ -151,54 +158,47 @@ function toggleAvisoUxCaja(show){ el.alertUxCaja.style.display=show?'':'none'; d
 function calcTotal(){ const modo=el.contarPor.value, cant=Math.max(1,parseInt(el.cantidad.value||'1',10)); const uxc=Number(lastFicha?.unidades_por_caja||0); let total=cant; if(modo==='c'){ if(uxc>0){ total=cant*uxc; toggleAvisoUxCaja(false);} else { toggleAvisoUxCaja(true);} } else toggleAvisoUxCaja(false); el.totalUnid.value=total; return total; }
 el.contarPor.onchange=calcTotal; el.cantidad.oninput=calcTotal;
 
-/* ======= Fetch helpers (CORS + anti-cache) ======= */
-function buildUrl(path){ return API + path + (path.includes('?')?'&':'?') + 't=' + Date.now(); }
+/* ===== Fetch helpers reforzados (CORS + anti-cache) ===== */
+function antiCache(path){ return API + path + (path.includes('?')?'&':'?') + 't=' + Date.now(); }
 
 async function apiGet(path){
-  const url = buildUrl(path);
-  const r = await fetch(url, {
-    method:'GET',
-    mode:'cors',
-    cache:'no-store',
-    redirect:'follow',
-    headers:{ 'Accept':'application/json' }
+  const r = await fetch(antiCache(path), {
+    method: 'GET',
+    mode: 'cors',
+    cache: 'no-store',
+    redirect: 'follow',
+    headers: { 'Accept': 'application/json' }
   });
-  const text = await r.text();
-  try { return JSON.parse(text); }
-  catch { return { ok:false, error:'NON_JSON', raw:text.slice(0,200) }; }
+  const tx = await r.text();
+  try { return JSON.parse(tx); } catch { return { ok:false, error:'NON_JSON', raw: tx.slice(0,200) }; }
 }
 
 async function apiPost(body){
-  const r = await fetch(buildUrl(''), {
-    method:'POST',
-    mode:'cors',
-    cache:'no-store',
-    redirect:'follow',
-    headers:{ 'Content-Type':'application/json', 'Accept':'application/json' },
+  const r = await fetch(antiCache(''), {
+    method: 'POST',
+    mode: 'cors',
+    cache: 'no-store',
+    redirect: 'follow',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
     body: JSON.stringify(body)
   });
-  const text = await r.text();
-  try { return JSON.parse(text); }
-  catch { return { ok:false, error:'NON_JSON', raw:text.slice(0,200) }; }
+  const tx = await r.text();
+  try { return JSON.parse(tx); } catch { return { ok:false, error:'NON_JSON', raw: tx.slice(0,200) }; }
 }
 
 /* Ping + responsables */
 (async ()=>{
   const ping = await apiGet('?action=ping');
-  if (ping?.ok){ el.apiBadge.textContent='API OK'; el.apiBadge.style.color='#0a0'; }
-  else {
-    el.apiBadge.textContent='API';
-    el.apiBadge.style.color='#a00';
-    console.warn('Ping fallo:', ping);
-  }
+  el.apiBadge.textContent = ping?.ok ? 'API OK' : 'API ERROR';
+  el.apiBadge.style.color = ping?.ok ? '#0a0' : '#a00';
 
   const u = await apiGet('?action=users');
   if(u.ok && Array.isArray(u.responsables)){
     u.responsables.forEach(n=>{ const o=document.createElement('option'); o.value=o.textContent=n; el.resp.appendChild(o); });
     el.respError.style.display='none';
-  } else {
+  }else{
     el.respError.style.display='';
-    el.respError.textContent = 'No se pudo cargar responsables' + (u?.error?` (${u.error})`:'') + (u?.raw?` · pista: ${u.raw.replace(/\s+/g,' ').slice(0,80)}`:'');
+    el.respError.textContent = 'No se pudo cargar responsables' + (u?.error?` (${u.error})`:'') + (u?.raw ? ' · pista: ' + u.raw.replace(/\s+/g,' ').slice(0,80) : '');
   }
 })();
 
@@ -219,21 +219,22 @@ async function lookupProduct(){
   calcTotal();
 }
 
-/* ===== ESCÁNER (visor chato) ===== */
+/* ===== ESCÁNER 1D (banda) ===== */
 function setLed(state,msg){ el.scanLed.className='led '+(state||'gray'); el.scanMsg.textContent=msg||''; }
 
 async function startCameraWith(config){
   const cardW = el.reader.parentElement.getBoundingClientRect().width || 720;
   const contW = Math.max(320, Math.min(cardW, 720));
-  const qrW   = Math.min(Math.floor(contW * 0.85), 640);
-  const qrH   = Math.max(80, Math.round(qrW * 0.22)); // chato
-  el.reader.style.height = qrH + 'px';
+  const boxW  = Math.min(Math.floor(contW * 0.85), 640);
+  const boxH  = Math.max(80, Math.round(boxW * 0.22));
+  el.reader.style.display = '';
+  el.reader.style.height  = boxH + 'px';
 
   await qr.start(
     config,
-    { fps:10, qrbox:{ width:qrW, height:qrH }, videoConstraints:{ facingMode:'environment' } },
+    { fps:10, qrbox:{ width:boxW, height:boxH }, videoConstraints:{ facingMode:'environment' } },
     async (txt)=>{ el.key.value=txt.trim(); await new Promise(r=>setTimeout(r,10)); await lookupProduct(); setLed('green','Código leído'); const aviso = el.alertUxCaja.style.display!=='none'; if(AUTO && !aviso){ enviar(true);} else { await stop(); } },
-    (_)=>{}
+    ()=>{}
   );
 }
 
@@ -241,23 +242,24 @@ el.scanStart.onclick = async () => {
   try{
     if(!qr) qr = new Html5Qrcode('reader');
     setLed('gray','Solicitando cámara…');
-    try{ await startCameraWith({ facingMode:{ exact:'environment' } }); scanning=true; setLed('gray','Escaneando…'); return; }
-    catch(_){}
-
+    try{ await startCameraWith({ facingMode:{ exact:'environment' } }); scanning=true; setLed('gray','Escaneando…'); return; }catch(_){}
     const cams = await Html5Qrcode.getCameras();
-    if(!cams || !cams.length){ setLed('red','No se encontró cámara'); el.reader.style.height='0px'; return; }
+    if(!cams || !cams.length){ setLed('red','No se encontró cámara'); await stop(); return; }
     const back = cams.find(c=>/back|rear|environment|trasera/i.test(c.label||'')) || cams[0];
     await startCameraWith(back.id || back);
     scanning=true; setLed('gray','Escaneando…');
   }catch(e){
-    if(String(e).match(/NotAllowedError|Permission/)) setLed('red','Permiso de cámara denegado');
-    else if(String(e).match(/NotFoundError|no camera/i)) setLed('red','No hay cámara disponible');
-    else setLed('red','No se pudo iniciar la cámara');
-    el.reader.style.height='0px';
+    setLed('red','No se pudo iniciar la cámara');
+    await stop();
   }
 };
 
-async function stop(){ try{ if(qr && scanning){ await qr.stop(); scanning=false; } }catch(e){} el.reader.style.height='0px'; setLed('gray','Cámara inactiva'); }
+async function stop(){
+  try{ if(qr && scanning){ await qr.stop(); scanning=false; } }catch(e){}
+  el.reader.style.height  = '0px';
+  el.reader.style.display = 'none';
+  setLed('gray','Cámara inactiva');
+}
 el.scanStop.onclick=stop;
 el.scanClear.onclick=async()=>{ await stop(); el.key.value=''; lastFicha=null; el.product.innerHTML=''; el.cantidad.value='1'; el.contarPor.value='u'; calcTotal(); el.key.focus(); };
 
@@ -268,7 +270,6 @@ async function enviar(auto){
   const payload={ mov: MOV.val, estado: el.estado.value, motivo:'', destino:'', key: el.key.value.trim(), cantidad: String(total), oc: el.oc.value.trim(), opi: el.opi.value.trim(), obs: el.obs.value.trim(), responsable: el.resp.value.trim() };
   if(!payload.key){ el.status.textContent='Ingrese/escanee Código/Modelo'; return; }
   if(!payload.responsable){ el.status.textContent='Seleccione Responsable'; return; }
-
   el.status.textContent = auto ? 'Registrando (auto)…' : 'Procesando…';
   const j = await apiPost(payload);
   if(j.ok){
