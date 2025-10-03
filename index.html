@@ -1,4 +1,4 @@
-<!-- index.html en GitHub Pages -->
+<!-- index.html (GitHub Pages) -->
 <meta name="robots" content="noindex,nofollow">
 <div id="app-root"></div>
 <link rel="preconnect" href="https://unpkg.com">
@@ -36,20 +36,18 @@
 
   #scanBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 
-  /* Visor: inicia colapsado; JS le da altura explícita al empezar */
+  /* Visor: inicia colapsado; JS le pone altura explícita al empezar */
   #reader{
     width:100%;
     max-width:720px;
-    height:0;              /* <- clave */
+    height:0;
     overflow:hidden;
     border:1px solid var(--bd);
     border-radius:10px;
     background:#000;
     margin:8px auto 12px;
   }
-  @media (max-width:520px){
-    #reader{ max-width:100%; }
-  }
+  @media (max-width:520px){ #reader{ max-width:100%; } }
 
   .led{width:12px;height:12px;border-radius:50%;border:1px solid #ccc;display:inline-block}
   .led.red{background:#e03a3a}.led.green{background:#19a34a}.led.gray{background:#bbb}
@@ -61,10 +59,10 @@
 </style>
 
 <script>
-/* ==== API (/exec) ==== */
-const API = 'https://script.google.com/macros/s/AKfycbyMBDjR8vgyUorjsQifcYK0ga_b2FqdjR3KZiFjMyxX57LUzjZXQ9CW0Ea5hNs_mbxkGw/exec';
+/* ====== API: usá tu /exec NUEVO que ya probaste ====== */
+const API = 'https://script.google.com/macros/s/AKfycbydNmLNEOmACUDAMS2bKw9ztYgNCCZupOg-TEPXMouPlav0wBkBNB9lI2ESw1a3oID5Pw/exec';
 
-const $e = (sel,root=document)=>root.querySelector(sel);
+const $e = (s,root=document)=>root.querySelector(s);
 const el = {};
 document.getElementById('app-root').innerHTML = `
 <div class="container"><div class="card">
@@ -141,7 +139,7 @@ const MOV = {val:'Ingreso'}; let AUTO=false, lastFicha=null, qr=null, scanning=f
 ].forEach(id=>el[id]=$e('#'+id));
 
 /* Movimiento */
-function setMov(m){MOV.val=m; el.btnIng.classList.toggle('active',m==='Ingreso'); el.btnEgr.classList.toggle('active',m==='Egreso');}
+function setMov(m){ MOV.val=m; el.btnIng.classList.toggle('active',m==='Ingreso'); el.btnEgr.classList.toggle('active',m==='Egreso'); }
 el.btnIng.onclick=()=>setMov('Ingreso'); el.btnEgr.onclick=()=>setMov('Egreso'); setMov('Ingreso');
 
 /* Automático */
@@ -153,47 +151,54 @@ function toggleAvisoUxCaja(show){ el.alertUxCaja.style.display=show?'':'none'; d
 function calcTotal(){ const modo=el.contarPor.value, cant=Math.max(1,parseInt(el.cantidad.value||'1',10)); const uxc=Number(lastFicha?.unidades_por_caja||0); let total=cant; if(modo==='c'){ if(uxc>0){ total=cant*uxc; toggleAvisoUxCaja(false);} else { toggleAvisoUxCaja(true);} } else toggleAvisoUxCaja(false); el.totalUnid.value=total; return total; }
 el.contarPor.onchange=calcTotal; el.cantidad.oninput=calcTotal;
 
-/* ===== Fetch helpers ROBUSTOS ===== */
+/* ======= Fetch helpers (CORS + anti-cache) ======= */
+function buildUrl(path){ return API + path + (path.includes('?')?'&':'?') + 't=' + Date.now(); }
+
 async function apiGet(path){
-  const url = API + path + (path.includes('?')?'&':'?') + 't=' + Date.now();
-  const r = await fetch(url, { headers:{'Accept':'application/json'}, mode:'cors', credentials:'omit' });
+  const url = buildUrl(path);
+  const r = await fetch(url, {
+    method:'GET',
+    mode:'cors',
+    cache:'no-store',
+    redirect:'follow',
+    headers:{ 'Accept':'application/json' }
+  });
   const text = await r.text();
-  if (!r.ok) { console.error('apiGet HTTP', r.status, text); throw new Error(`HTTP ${r.status}`); }
   try { return JSON.parse(text); }
-  catch { console.error('apiGet NON_JSON', text); throw new Error('NON_JSON'); }
-}
-async function apiPost(body){
-  const url = API + '?t=' + Date.now();
-  const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'}, body:JSON.stringify(body), mode:'cors', credentials:'omit' });
-  const text = await r.text();
-  if (!r.ok) { console.error('apiPost HTTP', r.status, text); throw new Error(`HTTP ${r.status}`); }
-  try { return JSON.parse(text); }
-  catch { console.error('apiPost NON_JSON', text); throw new Error('NON_JSON'); }
+  catch { return { ok:false, error:'NON_JSON', raw:text.slice(0,200) }; }
 }
 
-/* Ping + responsables (con handling claro) */
+async function apiPost(body){
+  const r = await fetch(buildUrl(''), {
+    method:'POST',
+    mode:'cors',
+    cache:'no-store',
+    redirect:'follow',
+    headers:{ 'Content-Type':'application/json', 'Accept':'application/json' },
+    body: JSON.stringify(body)
+  });
+  const text = await r.text();
+  try { return JSON.parse(text); }
+  catch { return { ok:false, error:'NON_JSON', raw:text.slice(0,200) }; }
+}
+
+/* Ping + responsables */
 (async ()=>{
-  try{
-    const ping = await apiGet('?action=ping');
-    el.apiBadge.textContent = ping?.ok ? 'API OK' : 'API ERROR';
-    el.apiBadge.style.color = ping?.ok ? '#0a0' : '#a00';
-  }catch(e){
-    el.apiBadge.textContent = 'API ERROR';
-    el.apiBadge.style.color = '#a00';
+  const ping = await apiGet('?action=ping');
+  if (ping?.ok){ el.apiBadge.textContent='API OK'; el.apiBadge.style.color='#0a0'; }
+  else {
+    el.apiBadge.textContent='API';
+    el.apiBadge.style.color='#a00';
+    console.warn('Ping fallo:', ping);
   }
 
-  try{
-    const u = await apiGet('?action=users');
-    if(u.ok && Array.isArray(u.responsables)){
-      u.responsables.forEach(n=>{ const o=document.createElement('option'); o.value=o.textContent=n; el.resp.appendChild(o); });
-      el.respError.style.display='none';
-    }else{
-      el.respError.style.display='';
-      el.respError.textContent = 'No se pudo cargar responsables' + (u?.error?` (${u.error})`: '');
-    }
-  }catch(e){
+  const u = await apiGet('?action=users');
+  if(u.ok && Array.isArray(u.responsables)){
+    u.responsables.forEach(n=>{ const o=document.createElement('option'); o.value=o.textContent=n; el.resp.appendChild(o); });
+    el.respError.style.display='none';
+  } else {
     el.respError.style.display='';
-    el.respError.textContent = 'No se pudo cargar responsables (red/API)';
+    el.respError.textContent = 'No se pudo cargar responsables' + (u?.error?` (${u.error})`:'') + (u?.raw?` · pista: ${u.raw.replace(/\s+/g,' ').slice(0,80)}`:'');
   }
 })();
 
@@ -204,30 +209,24 @@ async function lookupProduct(){
   const key=el.key.value.trim();
   if(!key){ el.product.innerHTML=''; lastFicha=null; calcTotal(); return; }
   el.product.textContent='Buscando…';
-  try{
-    const j=await apiGet('?action=lookup&key='+encodeURIComponent(key));
-    if(j.ok){
-      lastFicha=j.ficha;
-      const desc = j.ficha.descripcion ? `<br><b>Descripción:</b> ${j.ficha.descripcion}` : '';
-      const uxc  = j.ficha.unidades_por_caja ? (' | U/Caja: '+j.ficha.unidades_por_caja) : '';
-      el.product.innerHTML = `<small class="mono">Modelo: <b>${j.ficha.modelo}</b> | Código: <b>${j.ficha.codigo}</b><br>Material: ${j.ficha.material} | Color: ${j.ficha.color} | Medidas: ${j.ficha.medidas}${uxc}${desc}</small>`;
-    } else {
-      lastFicha=null; el.product.innerHTML='<small style="color:#b00">No encontrado en Maestros</small>';
-    }
-  }catch(e){
-    lastFicha=null; el.product.innerHTML='<small style="color:#b00">Error de API</small>';
-  }
+  const j=await apiGet('?action=lookup&key='+encodeURIComponent(key));
+  if(j.ok){
+    lastFicha=j.ficha;
+    const desc = j.ficha.descripcion ? `<br><b>Descripción:</b> ${j.ficha.descripcion}` : '';
+    const uxc  = j.ficha.unidades_por_caja ? (' | U/Caja: '+j.ficha.unidades_por_caja) : '';
+    el.product.innerHTML = `<small class="mono">Modelo: <b>${j.ficha.modelo}</b> | Código: <b>${j.ficha.codigo}</b><br>Material: ${j.ficha.material} | Color: ${j.ficha.color} | Medidas: ${j.ficha.medidas}${uxc}${desc}</small>`;
+  } else { lastFicha=null; el.product.innerHTML='<small style="color:#b00">No encontrado en Maestros</small>'; }
   calcTotal();
 }
 
-/* ===== ESCÁNER: altura explícita + fallback de cámara ===== */
+/* ===== ESCÁNER (visor chato) ===== */
 function setLed(state,msg){ el.scanLed.className='led '+(state||'gray'); el.scanMsg.textContent=msg||''; }
 
 async function startCameraWith(config){
   const cardW = el.reader.parentElement.getBoundingClientRect().width || 720;
   const contW = Math.max(320, Math.min(cardW, 720));
   const qrW   = Math.min(Math.floor(contW * 0.85), 640);
-  const qrH   = Math.max(80, Math.round(qrW * 0.22));
+  const qrH   = Math.max(80, Math.round(qrW * 0.22)); // chato
   el.reader.style.height = qrH + 'px';
 
   await qr.start(
@@ -242,7 +241,6 @@ el.scanStart.onclick = async () => {
   try{
     if(!qr) qr = new Html5Qrcode('reader');
     setLed('gray','Solicitando cámara…');
-
     try{ await startCameraWith({ facingMode:{ exact:'environment' } }); scanning=true; setLed('gray','Escaneando…'); return; }
     catch(_){}
 
@@ -272,17 +270,13 @@ async function enviar(auto){
   if(!payload.responsable){ el.status.textContent='Seleccione Responsable'; return; }
 
   el.status.textContent = auto ? 'Registrando (auto)…' : 'Procesando…';
-  try{
-    const j = await apiPost(payload);
-    if(j.ok){
-      el.status.innerHTML = `✅ ${j.Movimiento} ${j.Cantidad}u — ${j.ficha.modelo} (${j.ficha.codigo}) — Estado: ${j.Estado}${j.Dest?' → '+j.Dest:''}. Saldo: ${j.saldo}`;
-      if(auto){ el.cantidad.value='1'; el.key.value=''; lastFicha=null; el.product.innerHTML=''; calcTotal(); setLed('gray','Listo para siguiente'); }
-      else     { el.cantidad.value='1'; el.obs.value=''; }
-    } else {
-      el.status.textContent = '⚠️ '+(j.error || 'Error inesperado') + (j.raw ? ' · pista: '+ j.raw.replace(/\s+/g,' ').slice(0,80) : '');
-    }
-  }catch(e){
-    el.status.textContent = '⚠️ Error de red/API';
+  const j = await apiPost(payload);
+  if(j.ok){
+    el.status.innerHTML = `✅ ${j.Movimiento} ${j.Cantidad}u — ${j.ficha.modelo} (${j.ficha.codigo}) — Estado: ${j.Estado}${j.Dest?' → '+j.Dest:''}. Saldo: ${j.saldo}`;
+    if(auto){ el.cantidad.value='1'; el.key.value=''; lastFicha=null; el.product.innerHTML=''; calcTotal(); setLed('gray','Listo para siguiente'); }
+    else     { el.cantidad.value='1'; el.obs.value=''; }
+  } else {
+    el.status.textContent = '⚠️ '+(j.error || 'Error inesperado') + (j.raw ? ' · pista: '+ j.raw.replace(/\s+/g,' ').slice(0,80) : '');
   }
   if(auto && !scanning && AUTO) el.scanStart.click();
 }
