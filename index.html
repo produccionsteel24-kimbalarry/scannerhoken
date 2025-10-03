@@ -1,4 +1,4 @@
-<!-- index.html (GitHub Pages) -->
+<!-- index.html en GitHub Pages -->
 <meta name="robots" content="noindex,nofollow">
 <div id="app-root"></div>
 <link rel="preconnect" href="https://unpkg.com">
@@ -13,6 +13,7 @@
   .row{display:grid;grid-template-columns:1fr;gap:var(--gap);margin:0 0 var(--gap)}
   .two{grid-template-columns:1fr 1fr}
   @media(max-width:720px){.two{grid-template-columns:1fr}}
+
   label{font-size:14px;color:var(--muted)}
   input,select,textarea{width:100%;padding:12px;font-size:16px;border:1px solid var(--bd);border-radius:10px;background:#fff}
   textarea{min-height:84px;resize:vertical}
@@ -35,20 +36,16 @@
 
   #scanBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 
-  /* Visor: presente pero colapsado; JS fija la altura al iniciar */
+  /* Visor horizontal, contenido y centrado */
   #reader{
-    position:relative;
     width:100%;
     max-width:720px;
-    height:0;               /* se abre por JS */
-    overflow:hidden;
+    aspect-ratio:16/9;
     border:1px solid var(--bd);
     border-radius:10px;
     background:#000;
-    margin:8px auto 12px;
-  }
-  @media (max-width:520px){
-    #reader{ max-width:100%; }
+    margin:0 auto;
+    display:none;
   }
 
   .led{width:12px;height:12px;border-radius:50%;border:1px solid #ccc;display:inline-block}
@@ -61,12 +58,12 @@
 </style>
 
 <script>
-/* ==== API (Apps Script /exec) ==== */
-const API = 'https://script.google.com/macros/s/AKfycbyrhccA9bA5fgjt8Y4vSF5tuwwAbMfPQxn8LRfkgx7JQsfu40EZN1mO84cVdFgIr-ohWg/exec';
+/* ==== API (Apps Script /exec) – usa tu nueva URL ==== */
+const API = 'https://script.google.com/macros/s/AKfycbxLaU1rLD4BOE-8vXytIiwc34mU0WyU3cHOXwULVdA_62ZE6A5qrfnbC2fchUykVjeAug/exec';
+/* ================================================ */
 
 const $e = (sel,root=document)=>root.querySelector(sel);
 const el = {};
-
 document.getElementById('app-root').innerHTML = `
 <div class="container"><div class="card">
   <h2>Sector Espera – Movimientos <span id="apiBadge" class="badge">API…</span></h2>
@@ -93,6 +90,23 @@ document.getElementById('app-root').innerHTML = `
       <label>Responsable</label>
       <select id="resp"><option value="">-- Seleccionar --</option></select>
       <div id="respError" class="hint" style="display:none"></div>
+    </div>
+  </div>
+
+  <div class="row" id="rowDestino" style="display:none">
+    <div>
+      <label>Destino mecanizado (si Mecanizar)</label>
+      <select id="destino"><option>Bandas</option><option>Luján</option></select>
+    </div>
+  </div>
+
+  <div class="row" id="rowMotivo" style="display:none">
+    <div>
+      <label>Motivo (si Rechazado)</label>
+      <select id="motivo">
+        <option>Fuera de medida</option><option>Color</option>
+        <option>Tornillos incorrectos</option><option>Otro</option>
+      </select>
     </div>
   </div>
 
@@ -153,17 +167,21 @@ document.getElementById('app-root').innerHTML = `
 
 const MOV = {val:'Ingreso'}; let AUTO=false, lastFicha=null, qr=null, scanning=false;
 [
- 'btnIng','btnEgr','btnAuto','estado','key','product',
+ 'btnIng','btnEgr','btnAuto','estado','rowDestino','rowMotivo','key','product',
  'scanStart','scanStop','scanClear','scanLed','scanMsg','reader',
  'contarPor','cantidad','totalUnid','alertUxCaja','oc','opi','obs','resp','enviar','status','respError','apiBadge'
 ].forEach(id=>el[id]=$e('#'+id));
 
 /* Movimiento */
-function setMov(m){MOV.val=m; el.btnIng.classList.toggle('active',m==='Ingreso'); el.btnEgr.classList.toggle('active',m==='Egreso');}
+function setMov(m){MOV.val=m; el.btnIng.classList.toggle('active',m==='Ingreso'); el.btnEgr.classList.toggle('active',m==='Egreso'); updCond();}
 el.btnIng.onclick=()=>setMov('Ingreso'); el.btnEgr.onclick=()=>setMov('Egreso'); setMov('Ingreso');
 
 /* Automático */
 el.btnAuto.onclick=()=>{ if(el.btnAuto.classList.contains('disabled')) return; AUTO=!AUTO; el.btnAuto.classList.toggle('active',AUTO); el.btnAuto.setAttribute('aria-pressed',AUTO?'true':'false'); };
+
+/* Condicionales */
+el.estado.onchange=updCond;
+function updCond(){ const esRech=el.estado.value==='Rechazado', esMec=el.estado.value==='Mecanizar'; el.rowMotivo.style.display=esRech?'':'none'; el.rowDestino.style.display=esMec?'':'none'; }
 
 /* Avisos / total */
 function disableAuto(dis,why=''){ if(dis){AUTO=false; el.btnAuto.classList.remove('active'); el.btnAuto.classList.add('disabled'); el.btnAuto.style.opacity=.6; el.btnAuto.title=why;} else {el.btnAuto.classList.remove('disabled'); el.btnAuto.style.opacity=1; el.btnAuto.title='';}}
@@ -171,22 +189,37 @@ function toggleAvisoUxCaja(show){ el.alertUxCaja.style.display=show?'':'none'; d
 function calcTotal(){ const modo=el.contarPor.value, cant=Math.max(1,parseInt(el.cantidad.value||'1',10)); const uxc=Number(lastFicha?.unidades_por_caja||0); let total=cant; if(modo==='c'){ if(uxc>0){ total=cant*uxc; toggleAvisoUxCaja(false);} else { toggleAvisoUxCaja(true);} } else toggleAvisoUxCaja(false); el.totalUnid.value=total; return total; }
 el.contarPor.onchange=calcTotal; el.cantidad.oninput=calcTotal;
 
-/* Fetch helpers (cache-bust) */
-async function apiGet(path){ const url=API+path+(path.includes('?')?'&':'?')+'t='+Date.now(); const r=await fetch(url,{headers:{'Accept':'application/json'}}); const t=await r.text(); try{return JSON.parse(t);}catch(_){return {ok:false,error:'NON_JSON',raw:t.slice(0,200)};}}
-async function apiPost(body){ const r=await fetch(API+'?t='+Date.now(),{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(body)}); const t=await r.text(); try{return JSON.parse(t);}catch(_){return {ok:false,error:'NON_JSON',raw:t.slice(0,200)};}}
+/* Fetch helpers con cache-bust y parseo robusto */
+async function apiGet(path){
+  const url = API + path + (path.includes('?')?'&':'?') + 't=' + Date.now();
+  const r = await fetch(url, {headers:{'Accept':'application/json'}});
+  const text = await r.text();
+  try { return JSON.parse(text); } catch(_){
+    return { ok:false, error:'NON_JSON', raw: text.slice(0,200) };
+  }
+}
+async function apiPost(body){
+  const url = API + '?t=' + Date.now();
+  const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(body)});
+  const text = await r.text();
+  try { return JSON.parse(text); } catch(_){ return { ok:false, error:'NON_JSON', raw:text.slice(0,200) }; }
+}
 
-/* Ping + Responsables (NO CAMBIADO) */
+/* Chequeo API + responsables */
 (async ()=>{
+  // ping
   const ping = await apiGet('?action=ping');
   el.apiBadge.textContent = ping?.ok ? 'API OK' : 'API ERROR';
   el.apiBadge.style.color = ping?.ok ? '#0a0' : '#a00';
 
+  // responsables
   const u = await apiGet('?action=users');
   if(u.ok && Array.isArray(u.responsables)){
     u.responsables.forEach(n=>{ const o=document.createElement('option'); o.value=o.textContent=n; el.resp.appendChild(o); });
     el.respError.style.display='none';
   }else{
-    el.respError.style.display=''; el.respError.textContent='No se pudo cargar responsables ' + (u.error ? `(${u.error})` : '') + (u.raw ? ' · pista: ' + u.raw.replace(/\s+/g,' ').slice(0,80) : '');
+    el.respError.style.display='';
+    el.respError.textContent = 'No se pudo cargar responsables ' + (u.error ? `(${u.error})` : '') + (u.raw ? ' · pista: ' + u.raw.replace(/\s+/g,' ').slice(0,80) : '');
   }
 })();
 
@@ -215,57 +248,25 @@ async function lookupProduct(){
   calcTotal();
 }
 
-/* === Escáner: configuración 1D (banda horizontal) === */
+/* Escáner (marco apaisado moderado) */
 function setLed(state,msg){ el.scanLed.className='led '+(state||'gray'); el.scanMsg.textContent=msg||''; }
-
-el.scanStart.onclick = async () => {
-  try{
-    if(!qr) qr = new Html5Qrcode('reader');
-
-    // Medimos el ancho de la card/reader
-    const cardW = el.reader.parentElement.getBoundingClientRect().width || 720;
-    const contW = Math.max(320, Math.min(cardW, 720));
-    const boxW  = Math.min(Math.floor(contW * 0.85), 640); // ancho cómodo
-    const boxH  = Math.max(80, Math.round(boxW * 0.22));   // bien chato (ideal 1D)
-
-    // Abrimos el contenedor (altura visible) antes de iniciar la cámara
-    el.reader.style.height = boxH + 'px';
-    setLed('gray','Solicitando cámara…');
-
-    // Intento directo cámara trasera
-    let camConfig = { facingMode:{ exact: "environment" } };
-
-    // Si falla, enumeramos y elegimos back/rear
-    try{
-      await qr.start(
-        camConfig,
-        { fps:10, qrbox:{ width:boxW, height:boxH }, videoConstraints:{ facingMode:'environment' } },
-        async (txt)=>{ el.key.value=txt.trim(); await new Promise(r=>setTimeout(r,10)); await lookupProduct(); setLed('green','Código leído'); const aviso=el.alertUxCaja.style.display!=='none'; if(AUTO && !aviso){ enviar(true); } else { await stop(); } },
-        (_)=>{}
-      );
-      scanning=true; setLed('gray','Escaneando…'); return;
-    }catch(_){ /* fallback */ }
-
-    const cams = await Html5Qrcode.getCameras();
-    if(!cams || !cams.length){ setLed('red','No se encontró cámara'); el.reader.style.height = '0px'; return; }
-    const back = cams.find(c=>/back|rear|environment|trasera/i.test(c.label||'')) || cams[0];
-
-    await qr.start(
-      back.id || back,
-      { fps:10, qrbox:{ width:boxW, height:boxH }, videoConstraints:{ facingMode:'environment' } },
-      async (txt)=>{ el.key.value=txt.trim(); await new Promise(r=>setTimeout(r,10)); await lookupProduct(); setLed('green','Código leído'); const aviso=el.alertUxCaja.style.display!=='none'; if(AUTO && !aviso){ enviar(true);} else { await stop(); } },
-      (_)=>{}
-    );
-    scanning=true; setLed('gray','Escaneando…');
-  }catch(e){
-    setLed('red','No se pudo iniciar la cámara');
-    el.reader.style.height = '0px';
-  }
-};
-
-async function stop(){ try{ if(qr && scanning){ await qr.stop(); scanning=false;} }catch(e){} el.reader.style.height='0px'; setLed('gray','Cámara inactiva'); }
+el.scanStart.onclick=async()=>{ try{
+  if(!qr) qr=new Html5Qrcode('reader');
+  const cams=await Html5Qrcode.getCameras(); const id=cams?.[0]?.id;
+  if(!id){ setLed('red','Sin cámara'); return;}
+  el.reader.style.display='';
+  const contW=Math.max(320, el.reader.clientWidth||720);
+  const qrW = Math.min(Math.floor(contW*0.78), 640);
+  const qrH = Math.round(qrW*0.36);
+  await qr.start(id,{fps:10,qrbox:{width:qrW,height:qrH},videoConstraints:{facingMode:'environment'}},
+    async (txt)=>{ el.key.value=txt.trim(); await new Promise(r=>setTimeout(r,10)); await lookupProduct(); setLed('green','Código leído'); const aviso=el.alertUxCaja.style.display!=='none'; if(AUTO && !aviso){ enviar(true);} else { await stop(); } },
+    (_)=>{}
+  );
+  scanning=true; setLed('gray','Escaneando…');
+}catch(e){ setLed('red','No se pudo iniciar la cámara'); } };
+async function stop(){ try{ if(qr && scanning){ await qr.stop(); scanning=false;} }catch(e){} el.reader.style.display='none'; }
 el.scanStop.onclick=stop;
-el.scanClear.onclick=async()=>{ await stop(); el.key.value=''; lastFicha=null; el.product.innerHTML=''; el.cantidad.value='1'; el.contarPor.value='u'; calcTotal(); el.key.focus(); };
+el.scanClear.onclick=async()=>{ await stop(); el.key.value=''; lastFicha=null; el.product.innerHTML=''; el.cantidad.value='1'; el.contarPor.value='u'; calcTotal(); setLed('gray','Cámara inactiva'); el.key.focus(); };
 
 /* Registrar */
 el.enviar.onclick=()=>enviar(false);
@@ -273,8 +274,8 @@ async function enviar(auto){
   const total=calcTotal();
   const payload={
     mov: MOV.val, estado: el.estado.value,
-    motivo: (el.estado.value==='Rechazado') ? '' : '',
-    destino: (el.estado.value==='Mecanizar') ? '' : '',
+    motivo: (el.estado.value==='Rechazado') ? el.motivo.value : '',
+    destino: (el.estado.value==='Mecanizar') ? el.destino.value : '',
     key: el.key.value.trim(), cantidad: String(total),
     oc: el.oc.value.trim(), opi: el.opi.value.trim(),
     obs: el.obs.value.trim(), responsable: el.resp.value.trim()
