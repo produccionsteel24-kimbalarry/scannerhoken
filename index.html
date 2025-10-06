@@ -124,7 +124,10 @@
     <div class="row">
       <div>
         <label>Código o Modelo</label>
-        <input id="key" placeholder="Escaneá o escribí el Código/Modelo" />
+        <input id="key"
+               placeholder="Escaneá o escribí el Código/Modelo"
+               autocapitalize="characters" autocorrect="off"
+               autocomplete="off" spellcheck="false" inputmode="text" />
       </div>
     </div>
 
@@ -234,9 +237,26 @@
   /* ===== CÁMARA (embebida) — MODO QR ===== */
   function setLed(state,msg){ el.scanLed.className='led '+(state||'gray'); el.scanMsg.textContent=msg||''; }
 
+  // Asegura que, si el QR trae texto extra, solo quede el código
+  function extractCode(raw){
+    if(!raw) return '';
+    const t = String(raw).trim();
+
+    // "Código: XXXXXX"
+    let m = /c[oó]digo\s*[:\-]\s*([A-Za-z0-9\-]{4,})/i.exec(t);
+    if (m) return m[1].toUpperCase();
+
+    const head = t.split(/[\n\r\t|;,]/)[0];
+    m = /[A-Za-z0-9]+(?:-[A-Za-z0-9]+){1,}/.exec(head);
+    if (m) return m[0].toUpperCase();
+
+    return head.toUpperCase();
+  }
+
   function onScan(txt){
     (async ()=>{
-      el.key.value = (txt||'').trim();
+      const code = extractCode(txt);
+      el.key.value = code;
       await new Promise(r=>setTimeout(r,10));
       await lookupProduct();
       setLed('green','Código leído');
@@ -285,11 +305,9 @@
 
       const startConfig = {
         fps: 12,
-        // Caja cuadrada para QR
-        qrbox: { width: side, height: side },
+        qrbox: { width: side, height: side },          // caja cuadrada para QR
         videoConstraints: { facingMode: 'environment' },
-        // Forzar lectura de QR
-        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
+        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]  // forzar QR
       };
 
       await qr.start(
@@ -337,14 +355,4 @@
     el.status.textContent = auto ? 'Registrando (auto)…' : 'Procesando…';
     const j = await apiPost(payload);
     if(j.ok){
-      el.status.innerHTML = `✅ ${j.Movimiento} ${j.Cantidad}u — ${j.ficha.modelo} (${j.ficha.codigo}) — Estado: ${j.Estado}${j.Dest?' → '+j.Dest:''}. Saldo: ${j.saldo}`;
-      if(auto){ el.cantidad.value='1'; el.key.value=''; lastFicha=null; el.product.innerHTML=''; calcTotal(); setLed('gray','Listo para siguiente'); }
-      else     { el.cantidad.value='1'; el.obs.value=''; }
-    } else {
-      el.status.textContent = '⚠️ '+(j.error || 'Error inesperado') + (j.raw ? ' · pista: '+ j.raw.replace(/\s+/g,' ').slice(0,80) : '');
-    }
-    if(auto && !scanning && AUTO) el.scanStart.click();
-  }
-  </script>
-</body>
-</html>
+      el.status
