@@ -40,30 +40,32 @@
 
     #scanBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 
-    /* Visor tipo “banda” 1D: colapsado, se abre fijando height desde JS */
+    /* Visor “banda” 1D */
     #reader{
       position:relative;
-      z-index:10;           /* al frente */
+      z-index:10;
       width:100%;
       max-width:720px;
-      height:0;             /* colapsado hasta iniciar */
+      height:0;                 /* colapsado hasta iniciar */
       overflow:hidden;
       border:1px solid var(--bd);
       border-radius:10px;
       background:#000;
       margin:8px auto 12px;
-      display:none;         /* oculto hasta iniciar */
+      display:none;             /* oculto hasta iniciar */
     }
-    /* Forzar que html5-qrcode llene el contenedor */
+    /* Obliga a que el video/canvas llene el contenedor */
+    #reader, 
+    #reader #reader__scan_region,
     #reader video,
     #reader canvas,
     #reader .html5-qrcode-element,
-    #reader #qr-shaded-region,
-    #reader #reader__scan_region {
-      width:100% !important;
+    #reader #qr-shaded-region{
+      display:block !important;
+      width:100%  !important;
       height:100% !important;
     }
-    #reader video{ object-fit:cover; }
+    #reader video{ object-fit:cover !important; }
     #reader__dashboard{ display:none !important; }
 
     @media (max-width:520px){
@@ -83,7 +85,7 @@
   <div id="app-root"></div>
 
   <script>
-  /* ==== API (/exec) ==== */
+  /* ==== API (/exec) - SIN CAMBIOS ==== */
   const API = 'https://script.google.com/macros/s/AKfycbwKn4L6psOtM778jC9rPrJt1tAzopLBEBs8asLiWLVRX9iFF6iIc3XpzLvsZfqsMsYiAw/exec';
 
   const $e = (sel,root=document)=>root.querySelector(sel);
@@ -206,7 +208,7 @@
     try { return JSON.parse(tx); } catch { return { ok:false, error:'NON_JSON', raw: tx.slice(0,200) }; }
   }
 
-  /* Ping + responsables */
+  /* Ping + responsables (SIN CAMBIOS) */
   (async ()=>{
     const ping = await apiGet('?action=ping');
     el.apiBadge.textContent = ping?.ok ? 'API OK' : 'API ERROR';
@@ -244,7 +246,7 @@
 
   function onScan(txt){
     (async ()=>{
-      el.key.value = txt.trim();
+      el.key.value = (txt||'').trim();
       await new Promise(r=>setTimeout(r,10));
       await lookupProduct();
       setLed('green','Código leído');
@@ -252,7 +254,24 @@
       if (AUTO && !aviso) { enviar(true); } else { await stop(); }
     })();
   }
-  function onError(_){ /* silenciar errores por frame */ }
+  function onError(_){ /* silencioso por frame */ }
+
+  async function fixVideoOnce(){
+    for(let i=0;i<30;i++){ // ~3s
+      const v = el.reader.querySelector('video');
+      if(v){
+        try{
+          v.setAttribute('playsinline','');
+          v.muted = true;
+          v.style.width  = '100%';
+          v.style.height = '100%';
+          v.style.objectFit = 'cover';
+        }catch(_){}
+        return;
+      }
+      await new Promise(r=>setTimeout(r,100));
+    }
+  }
 
   el.scanStart.onclick = async () => {
     try{
@@ -269,6 +288,7 @@
 
       // Limpiar instancia previa si existe
       if (qr) { try{ await qr.stop(); await qr.clear(); }catch(_){} }
+      el.reader.innerHTML = '';
 
       // Crear instancia ahora que el contenedor es visible
       qr = new Html5Qrcode('reader', { verbose:false });
@@ -294,6 +314,10 @@
 
       scanning = true;
       setLed('gray','Escaneando…');
+
+      // Arreglo final del <video> embebido
+      await fixVideoOnce();
+
     }catch(e){
       setLed('red','No se pudo iniciar la cámara');
       await stop();
