@@ -22,11 +22,9 @@
     input,select,textarea{width:100%;padding:12px;font-size:16px;border:1px solid var(--bd);border-radius:10px;background:#fff}
     textarea{min-height:84px;resize:vertical}
 
-    /* Pills / toggle */
     .pill,.toggle{padding:8px 14px;border-radius:999px;border:1px solid var(--bd);background:#fff;cursor:pointer;user-select:none}
     .pill.active,.toggle.active{background:#111;color:#fff;border-color:#111}
 
-    /* Encabezado + barra de modos a la izquierda */
     .headerline{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px}
     .headerline h2{margin:0}
     .modebar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0 2px}
@@ -57,7 +55,6 @@
       margin:8px auto 12px;
       display:none;             /* oculto hasta iniciar */
     }
-    /* Obliga a que el video/canvas llene el contenedor */
     #reader,
     #reader #reader__scan_region,
     #reader video,
@@ -281,31 +278,25 @@
 
   el.scanStart.onclick = async () => {
     try{
-      // Dimensiones “banda” (un poco más alta para 1D)
       const cardW = el.reader.parentElement.getBoundingClientRect().width || 720;
       const contW = Math.max(320, Math.min(cardW, 720));
       const boxW  = Math.min(Math.floor(contW * 0.90), 720);
-      const boxH  = Math.max(110, Math.round(boxW * 0.28)); // ↑ antes ~0.22
+      const boxH  = Math.max(110, Math.round(boxW * 0.28)); // banda más alta
 
-      // Mostrar y dimensionar ANTES de crear el scanner
       el.reader.style.display = '';
       el.reader.style.width   = contW + 'px';
       el.reader.style.height  = boxH  + 'px';
 
-      // Limpiar instancia previa si existe
       if (qr) { try{ await qr.stop(); await qr.clear(); }catch(_){} }
       el.reader.innerHTML = '';
 
-      // Crear instancia ahora que el contenedor es visible
       qr = new Html5Qrcode('reader', { verbose:false });
       setLed('gray','Solicitando cámara…');
 
-      // Enumerar cámaras y elegir trasera
       const cams = await Html5Qrcode.getCameras();
       if (!cams || !cams.length) { setLed('red','No se encontró cámara'); await stop(); return; }
       const back = cams.find(c=>/back|rear|environment|trasera/i.test(c.label||'')) || cams[0];
 
-      // Iniciar con deviceId concreto + preferencia CODE_128 si existe
       const startConfig = {
         fps: 12,
         qrbox: { width: boxW, height: boxH },
@@ -315,6 +306,7 @@
           advanced: [{ focusMode: 'continuous' }, { torch: false }]
         }
       };
+      // Priorizar Code-128 si está disponible
       if (window.Html5QrcodeSupportedFormats?.CODE_128) {
         startConfig.formatsToSupport = [Html5QrcodeSupportedFormats.CODE_128];
       }
@@ -328,8 +320,6 @@
 
       scanning = true;
       setLed('gray','Escaneando…');
-
-      // Arreglo final del <video> embebido
       await fixVideoOnce();
 
     }catch(e){
