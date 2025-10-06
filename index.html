@@ -168,7 +168,6 @@
   `;
 
   const MOV = {val:'Ingreso'}; let AUTO=false, lastFicha=null, qr=null, scanning=false;
-  let QR_META = { desc: null }; // <-- NUEVO: guarda posible descripción que venga en el QR
 
   [
     'btnIng','btnEgr','btnAuto','estado','key','product','scanStart','scanStop','scanClear',
@@ -242,14 +241,7 @@
         ' | Medidas: '+j.ficha.medidas+uxc+desc+'</small>';
     } else {
       lastFicha=null;
-      // Si no existe en Maestros, mostrar lo que vino en el QR (si vino descripción)
-      if (QR_META.desc){
-        el.product.innerHTML =
-          '<small class="mono">Código: <b>'+key+'</b><br>'+
-          '<b>Descripción:</b> '+QR_META.desc+'</small>';
-      } else {
-        el.product.innerHTML = '<small style="color:#b00">No encontrado en Maestros</small>';
-      }
+      el.product.innerHTML = '<small style="color:#b00">No encontrado en Maestros</small>';
     }
     calcTotal();
   }
@@ -257,39 +249,28 @@
   /* ===== CÁMARA (embebida) — MODO QR ===== */
   function setLed(state,msg){ el.scanLed.className='led '+(state||'gray'); el.scanMsg.textContent=msg||''; }
 
-  // NUEVO: parsea código + descripción desde el QR
-  function parseQrPayload(raw){
-    if(!raw) return { code:'', desc:'' };
-    var t = String(raw).replace(/\r/g,'').trim();
-
-    var mCode = /c[oó]digo\s*[:\-]\s*([A-Za-z0-9\-_.]{3,})/i.exec(t);
-    var mDesc = /descripci[oó]n\s*[:\-]\s*([\s\S]+)/i.exec(t);
-
-    var code = mCode ? mCode[1] : '';
-    var desc = mDesc ? (mDesc[1]||'').trim() : '';
-
-    if(!code){
-      var parts = t.split(/\n|[\|;]+/).map(function(s){return s.trim();}).filter(Boolean);
-      var cm = parts.length ? /[A-Za-z0-9]+(?:-[A-Za-z0-9]+){1,}/.exec(parts[0]) : null;
-      if (cm) {
-        code = cm[0];
-        if (!desc && parts.length > 1) desc = parts.slice(1).join(' ').trim();
-      } else {
-        code = parts[0] || t;
-      }
+  // *** EXTRACCIÓN ROBUSTA DE CÓDIGO ***
+  function pickCodeFromText(raw){
+    if(!raw) return '';
+    const U = String(raw).toUpperCase();
+    // tokens alfanuméricos con al menos un guion (preferidos)
+    const hy = [...U.matchAll(/\b[A-Z0-9]+(?:-[A-Z0-9]+){1,}\b/g)].map(m=>m[0]);
+    if (hy.length){
+      // elegimos el más largo (suele ser el código completo)
+      hy.sort((a,b)=>b.length-a.length);
+      return hy[0];
     }
-    return { code: (code||'').toUpperCase(), desc };
+    // si no hay guiones, tomamos la primera palabra alfanumérica decente
+    const m = U.match(/\b[A-Z0-9]{3,}\b/);
+    return m ? m[0] : U.trim();
   }
 
   function onScan(txt){
     (async function(){
-      const parsed = parseQrPayload(txt);
-      QR_META.desc = parsed.desc || null;       // guarda desc para fallback
-      el.key.value = parsed.code;               // siempre carga el código en el input
-
-      await new Promise(function(r){setTimeout(r,10)});
-      await lookupProduct();
-
+      const code = pickCodeFromText(txt);
+      el.key.value = code;               // -> solo el CÓDIGO en el input
+      await new Promise(r=>setTimeout(r,10));
+      await lookupProduct();             // pinta la tarjeta de Maestros
       setLed('green','Código leído');
       const aviso = el.alertUxCaja.style.display !== 'none';
       if (AUTO && !aviso) { enviar(true); } else { await stop(); }
