@@ -1,7 +1,7 @@
 <!-- index.html en GitHub Pages -->
-<meta name="robots" content="noindex,nofollow">
+<meta name="robots" content="noindex,nofollow" />
 <div id="app-root"></div>
-<link rel="preconnect" href="https://unpkg.com">
+<link rel="preconnect" href="https://unpkg.com" />
 <script src="https://unpkg.com/html5-qrcode"></script>
 
 <style>
@@ -49,6 +49,13 @@
     margin:8px auto 12px;
     display:none;           /* oculto hasta iniciar */
   }
+  /* Asegura que el video se incruste y ocupe el contenedor */
+  #reader video{
+    width:100% !important;
+    height:100% !important;
+    object-fit:cover;
+  }
+
   @media (max-width:520px){
     #reader{ max-width:100%; }
   }
@@ -219,35 +226,61 @@ async function lookupProduct(){
   calcTotal();
 }
 
-/* ===== ESCÁNER 1D (banda) ===== */
+/* ===== CÁMARA (embebida, estable) ===== */
 function setLed(state,msg){ el.scanLed.className='led '+(state||'gray'); el.scanMsg.textContent=msg||''; }
 
-async function startCameraWith(config){
-  const cardW = el.reader.parentElement.getBoundingClientRect().width || 720;
-  const contW = Math.max(320, Math.min(cardW, 720));
-  const boxW  = Math.min(Math.floor(contW * 0.85), 640);
-  const boxH  = Math.max(80, Math.round(boxW * 0.22));
-  el.reader.style.display = '';
-  el.reader.style.height  = boxH + 'px';
-
-  await qr.start(
-    config,
-    { fps:10, qrbox:{ width:boxW, height:boxH }, videoConstraints:{ facingMode:'environment' } },
-    async (txt)=>{ el.key.value=txt.trim(); await new Promise(r=>setTimeout(r,10)); await lookupProduct(); setLed('green','Código leído'); const aviso = el.alertUxCaja.style.display!=='none'; if(AUTO && !aviso){ enviar(true);} else { await stop(); } },
-    ()=>{}
-  );
+function onScan(txt){
+  (async ()=>{
+    el.key.value = txt.trim();
+    await new Promise(r=>setTimeout(r,10));
+    await lookupProduct();
+    setLed('green','Código leído');
+    const aviso = el.alertUxCaja.style.display !== 'none';
+    if (AUTO && !aviso) { enviar(true); } else { await stop(); }
+  })();
 }
+function onError(_){ /* silenciar errores frame a frame */ }
 
 el.scanStart.onclick = async () => {
   try{
-    if(!qr) qr = new Html5Qrcode('reader');
+    // Dimensiones de la “banda” (marco chato)
+    const cardW = el.reader.parentElement.getBoundingClientRect().width || 720;
+    const contW = Math.max(320, Math.min(cardW, 720));
+    const boxW  = Math.min(Math.floor(contW * 0.85), 640);
+    const boxH  = Math.max(80, Math.round(boxW * 0.22));
+
+    // Mostrar y dimensionar contenedor ANTES de crear el scanner
+    el.reader.style.display = '';
+    el.reader.style.width   = contW + 'px';
+    el.reader.style.height  = boxH  + 'px';
+
+    // Limpiar instancia previa si existe
+    if (qr) { try{ await qr.stop(); await qr.clear(); }catch(_){} }
+
+    // Crear instancia ahora que el contenedor es visible
+    qr = new Html5Qrcode('reader', { verbose:false });
     setLed('gray','Solicitando cámara…');
-    try{ await startCameraWith({ facingMode:{ exact:'environment' } }); scanning=true; setLed('gray','Escaneando…'); return; }catch(_){}
+
+    // Enumerar cámaras y elegir trasera (evita fallback a “archivo”)
     const cams = await Html5Qrcode.getCameras();
-    if(!cams || !cams.length){ setLed('red','No se encontró cámara'); await stop(); return; }
+    if (!cams || !cams.length) { setLed('red','No se encontró cámara'); await stop(); return; }
     const back = cams.find(c=>/back|rear|environment|trasera/i.test(c.label||'')) || cams[0];
-    await startCameraWith(back.id || back);
-    scanning=true; setLed('gray','Escaneando…');
+
+    // Iniciar con deviceId concreto
+    await qr.start(
+      { deviceId: { exact: back.id || back } },
+      {
+        fps: 12,
+        qrbox: { width: boxW, height: boxH },
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+        videoConstraints: { facingMode: 'environment' }
+      },
+      onScan,
+      onError
+    );
+
+    scanning = true;
+    setLed('gray','Escaneando…');
   }catch(e){
     setLed('red','No se pudo iniciar la cámara');
     await stop();
@@ -255,13 +288,21 @@ el.scanStart.onclick = async () => {
 };
 
 async function stop(){
-  try{ if(qr && scanning){ await qr.stop(); scanning=false; } }catch(e){}
+  try{
+    if(qr && scanning){ await qr.stop(); }
+    if(qr){ await qr.clear(); }
+    scanning = false;
+  }catch(_){}
   el.reader.style.height  = '0px';
   el.reader.style.display = 'none';
   setLed('gray','Cámara inactiva');
 }
+
 el.scanStop.onclick=stop;
-el.scanClear.onclick=async()=>{ await stop(); el.key.value=''; lastFicha=null; el.product.innerHTML=''; el.cantidad.value='1'; el.contarPor.value='u'; calcTotal(); el.key.focus(); };
+el.scanClear.onclick=async()=>{
+  await stop(); el.key.value=''; lastFicha=null; el.product.innerHTML='';
+  el.cantidad.value='1'; el.contarPor.value='u'; calcTotal(); el.key.focus();
+};
 
 /* Registrar */
 el.enviar.onclick=()=>enviar(false);
@@ -270,6 +311,7 @@ async function enviar(auto){
   const payload={ mov: MOV.val, estado: el.estado.value, motivo:'', destino:'', key: el.key.value.trim(), cantidad: String(total), oc: el.oc.value.trim(), opi: el.opi.value.trim(), obs: el.obs.value.trim(), responsable: el.resp.value.trim() };
   if(!payload.key){ el.status.textContent='Ingrese/escanee Código/Modelo'; return; }
   if(!payload.responsable){ el.status.textContent='Seleccione Responsable'; return; }
+
   el.status.textContent = auto ? 'Registrando (auto)…' : 'Procesando…';
   const j = await apiPost(payload);
   if(j.ok){
