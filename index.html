@@ -355,4 +355,14 @@
     el.status.textContent = auto ? 'Registrando (auto)…' : 'Procesando…';
     const j = await apiPost(payload);
     if(j.ok){
-      el.status
+      el.status.innerHTML = `✅ ${j.Movimiento} ${j.Cantidad}u — ${j.ficha.modelo} (${j.ficha.codigo}) — Estado: ${j.Estado}${j.Dest?' → '+j.Dest:''}. Saldo: ${j.saldo}`;
+      if(auto){ el.cantidad.value='1'; el.key.value=''; lastFicha=null; el.product.innerHTML=''; calcTotal(); setLed('gray','Listo para siguiente'); }
+      else     { el.cantidad.value='1'; el.obs.value=''; }
+    } else {
+      el.status.textContent = '⚠️ '+(j.error || 'Error inesperado') + (j.raw ? ' · pista: '+ j.raw.replace(/\s+/g,' ').slice(0,80) : '');
+    }
+    if(auto && !scanning && AUTO) el.scanStart.click();
+  }
+  </script>
+</body>
+</html>
