@@ -16,15 +16,21 @@
     .row{display:grid;grid-template-columns:1fr;gap:var(--gap);margin:0 0 var(--gap)}
     .two{grid-template-columns:1fr 1fr}
     @media(max-width:720px){.two{grid-template-columns:1fr}}
+
     label{font-size:14px;color:var(--muted)}
     input,select,textarea{width:100%;padding:12px;font-size:16px;border:1px solid var(--bd);border-radius:10px;background:#fff}
     textarea{min-height:84px;resize:vertical}
 
-    /* barra de modos (izquierda) */
-    .modebar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+    /* Encabezado */
+    .headerline{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .headerline h2{margin:0}
+    .badge{font-size:11px;padding:2px 6px;border-radius:6px;border:1px solid var(--bd);color:#555}
+
+    /* Barra de modos (izquierda) */
+    .modebar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0 6px}
     .pill,.toggle{padding:8px 14px;border-radius:999px;border:1px solid var(--bd);background:#fff;cursor:pointer;user-select:none}
     .pill.active,.toggle.active{background:#111;color:#fff;border-color:#111}
-    .modehint{margin-top:2px;color:var(--muted);font-size:12px}
+    .modehint{margin:2px 0 12px;color:var(--muted);font-size:12px}
 
     #product{background:#fff;border:1px dashed var(--bd);border-radius:10px;padding:10px;font-size:14px;color:#333}
     #status{min-height:26px;font-size:15px;margin-top:6px}
@@ -37,7 +43,7 @@
 
     #scanBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 
-    /* Visor “banda” 1D */
+    /* Visor “banda” 1D incrustado */
     #reader{
       position:relative; z-index:10; width:100%; max-width:720px;
       height:0; overflow:hidden; border:1px solid var(--bd); border-radius:10px;
@@ -55,9 +61,6 @@
     .muted{color:#666;font-size:14px}
     .alert{background:#ffe9e9;border:1px solid #ffb3b3;color:#9b1c1c;border-radius:10px;padding:10px;font-size:14px}
     .hint{color:#a33;font-size:12px;margin-top:6px}
-    .badge{font-size:11px;padding:2px 6px;border-radius:6px;border:1px solid var(--bd);color:#555;margin-left:8px}
-    .headerline{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-    .headerline h2{margin:0}
   </style>
 </head>
 <body>
@@ -77,7 +80,7 @@
       <span id="apiBadge" class="badge">API…</span>
     </div>
 
-    <!-- NUEVA barra de modos (alineada a la izquierda) -->
+    <!-- Barra de modos a la izquierda -->
     <div class="modebar">
       <span class="pill" id="btnIng">Ingreso</span>
       <span class="pill" id="btnEgr">Egreso</span>
