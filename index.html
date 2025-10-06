@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="robots" content="noindex,nofollow" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <link rel="preconnect" href="https://unpkg.com" />
   <script src="https://unpkg.com/html5-qrcode"></script>
 
@@ -21,16 +22,15 @@
     input,select,textarea{width:100%;padding:12px;font-size:16px;border:1px solid var(--bd);border-radius:10px;background:#fff}
     textarea{min-height:84px;resize:vertical}
 
-    /* Encabezado */
-    .headerline{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-    .headerline h2{margin:0}
-    .badge{font-size:11px;padding:2px 6px;border-radius:6px;border:1px solid var(--bd);color:#555}
-
-    /* Barra de modos (izquierda) */
-    .modebar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0 6px}
+    /* Botones estilo pastilla / toggle (se mantienen) */
     .pill,.toggle{padding:8px 14px;border-radius:999px;border:1px solid var(--bd);background:#fff;cursor:pointer;user-select:none}
     .pill.active,.toggle.active{background:#111;color:#fff;border-color:#111}
-    .modehint{margin:2px 0 12px;color:var(--muted);font-size:12px}
+
+    /* NUEVO: encabezado y barra de modos a la izquierda */
+    .headerline{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+    .headerline h2{margin:0}
+    .modebar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0 2px}
+    .modehint{margin:0 0 10px;color:var(--muted);font-size:12px}
 
     #product{background:#fff;border:1px dashed var(--bd);border-radius:10px;padding:10px;font-size:14px;color:#333}
     #status{min-height:26px;font-size:15px;margin-top:6px}
@@ -43,17 +43,37 @@
 
     #scanBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 
-    /* Visor “banda” 1D incrustado */
+    /* Visor “banda” 1D */
     #reader{
-      position:relative; z-index:10; width:100%; max-width:720px;
-      height:0; overflow:hidden; border:1px solid var(--bd); border-radius:10px;
-      background:#000; margin:8px auto 12px; display:none;
+      position:relative;
+      z-index:10;
+      width:100%;
+      max-width:720px;
+      height:0;                 /* colapsado hasta iniciar */
+      overflow:hidden;
+      border:1px solid var(--bd);
+      border-radius:10px;
+      background:#000;
+      margin:8px auto 12px;
+      display:none;             /* oculto hasta iniciar */
     }
-    #reader video,#reader canvas,#reader .html5-qrcode-element,
-    #reader #qr-shaded-region,#reader #reader__scan_region{width:100%!important;height:100%!important}
-    #reader video{object-fit:cover}
-    #reader__dashboard{display:none!important}
-    @media (max-width:520px){#reader{max-width:100%}}
+    /* Obliga a que el video/canvas llene el contenedor */
+    #reader,
+    #reader #reader__scan_region,
+    #reader video,
+    #reader canvas,
+    #reader .html5-qrcode-element,
+    #reader #qr-shaded-region{
+      display:block !important;
+      width:100%  !important;
+      height:100% !important;
+    }
+    #reader video{ object-fit:cover !important; }
+    #reader__dashboard{ display:none !important; }
+
+    @media (max-width:520px){
+      #reader{ max-width:100%; }
+    }
 
     .led{width:12px;height:12px;border-radius:50%;border:1px solid #ccc;display:inline-block}
     .led.red{background:#e03a3a}.led.green{background:#19a34a}.led.gray{background:#bbb}
@@ -61,13 +81,14 @@
     .muted{color:#666;font-size:14px}
     .alert{background:#ffe9e9;border:1px solid #ffb3b3;color:#9b1c1c;border-radius:10px;padding:10px;font-size:14px}
     .hint{color:#a33;font-size:12px;margin-top:6px}
+    .badge{font-size:11px;padding:2px 6px;border-radius:6px;border:1px solid var(--bd);color:#555;margin-left:8px}
   </style>
 </head>
 <body>
   <div id="app-root"></div>
 
   <script>
-  /* ==== API (/exec) ==== */
+  /* ==== API (/exec) - SIN CAMBIOS ==== */
   const API = 'https://script.google.com/macros/s/AKfycbwKn4L6psOtM778jC9rPrJt1tAzopLBEBs8asLiWLVRX9iFF6iIc3XpzLvsZfqsMsYiAw/exec';
 
   const $e = (sel,root=document)=>root.querySelector(sel);
@@ -75,6 +96,7 @@
   document.getElementById('app-root').innerHTML = `
   <div class="container"><div class="card">
 
+    <!-- Encabezado + badge -->
     <div class="headerline">
       <h2>Sector Espera – Movimientos</h2>
       <span id="apiBadge" class="badge">API…</span>
@@ -168,16 +190,33 @@
 
   /* ===== Fetch helpers (CORS + anti-cache) ===== */
   function antiCache(path){ return API + path + (path.includes('?')?'&':'?') + 't=' + Date.now(); }
+
   async function apiGet(path){
-    const r = await fetch(antiCache(path), { method:'GET', mode:'cors', cache:'no-store', redirect:'follow', headers:{'Accept':'application/json'} });
-    const tx = await r.text(); try { return JSON.parse(tx); } catch { return { ok:false, error:'NON_JSON', raw: tx.slice(0,200) }; }
-  }
-  async function apiPost(body){
-    const r = await fetch(antiCache(''), { method:'POST', mode:'cors', cache:'no-store', redirect:'follow', headers:{'Content-Type':'application/json','Accept':'application/json'}, body: JSON.stringify(body) });
-    const tx = await r.text(); try { return JSON.parse(tx); } catch { return { ok:false, error:'NON_JSON', raw: tx.slice(0,200) }; }
+    const r = await fetch(antiCache(path), {
+      method: 'GET',
+      mode: 'cors',
+      cache: 'no-store',
+      redirect: 'follow',
+      headers: { 'Accept': 'application/json' }
+    });
+    const tx = await r.text();
+    try { return JSON.parse(tx); } catch { return { ok:false, error:'NON_JSON', raw: tx.slice(0,200) }; }
   }
 
-  /* Ping + responsables */
+  async function apiPost(body){
+    const r = await fetch(antiCache(''), {
+      method: 'POST',
+      mode: 'cors',
+      cache: 'no-store',
+      redirect: 'follow',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const tx = await r.text();
+    try { return JSON.parse(tx); } catch { return { ok:false, error:'NON_JSON', raw: tx.slice(0,200) }; }
+  }
+
+  /* Ping + responsables (SIN CAMBIOS) */
   (async ()=>{
     const ping = await apiGet('?action=ping');
     el.apiBadge.textContent = ping?.ok ? 'API OK' : 'API ERROR';
@@ -188,7 +227,8 @@
       u.responsables.forEach(n=>{ const o=document.createElement('option'); o.value=o.textContent=n; el.resp.appendChild(o); });
       el.respError.style.display='none';
     }else{
-      el.respError.style.display=''; el.respError.textContent = 'No se pudo cargar responsables' + (u?.error?` (${u.error})`:'') + (u?.raw ? ' · pista: ' + u.raw.replace(/\s+/g,' ').slice(0,80) : '');
+      el.respError.style.display='';
+      el.respError.textContent = 'No se pudo cargar responsables' + (u?.error?` (${u.error})`:'') + (u?.raw ? ' · pista: ' + u.raw.replace(/\s+/g,' ').slice(0,80) : '');
     }
   })();
 
@@ -211,44 +251,103 @@
 
   /* ===== CÁMARA (embebida) ===== */
   function setLed(state,msg){ el.scanLed.className='led '+(state||'gray'); el.scanMsg.textContent=msg||''; }
-  function onScan(txt){ (async ()=>{ el.key.value=txt.trim(); await new Promise(r=>setTimeout(r,10)); await lookupProduct(); setLed('green','Código leído'); const aviso=el.alertUxCaja.style.display!=='none'; if(AUTO && !aviso){ enviar(true);} else { await stop(); }})(); }
-  function onError(_){}
+
+  function onScan(txt){
+    (async ()=>{
+      el.key.value = (txt||'').trim();
+      await new Promise(r=>setTimeout(r,10));
+      await lookupProduct();
+      setLed('green','Código leído');
+      const aviso = el.alertUxCaja.style.display !== 'none';
+      if (AUTO && !aviso) { enviar(true); } else { await stop(); }
+    })();
+  }
+  function onError(_){ /* silencioso por frame */ }
+
+  async function fixVideoOnce(){
+    for(let i=0;i<30;i++){ // ~3s
+      const v = el.reader.querySelector('video');
+      if(v){
+        try{
+          v.setAttribute('playsinline','');
+          v.muted = true;
+          v.style.width  = '100%';
+          v.style.height = '100%';
+          v.style.objectFit = 'cover';
+        }catch(_){}
+        return;
+      }
+      await new Promise(r=>setTimeout(r,100));
+    }
+  }
 
   el.scanStart.onclick = async () => {
     try{
+      // Dimensiones “banda”
       const cardW = el.reader.parentElement.getBoundingClientRect().width || 720;
       const contW = Math.max(320, Math.min(cardW, 720));
       const boxW  = Math.min(Math.floor(contW * 0.85), 640);
       const boxH  = Math.max(80, Math.round(boxW * 0.22));
 
+      // Mostrar y dimensionar ANTES de crear el scanner
       el.reader.style.display = '';
       el.reader.style.width   = contW + 'px';
       el.reader.style.height  = boxH  + 'px';
 
+      // Limpiar instancia previa si existe
       if (qr) { try{ await qr.stop(); await qr.clear(); }catch(_){} }
+      el.reader.innerHTML = '';
 
+      // Crear instancia ahora que el contenedor es visible
       qr = new Html5Qrcode('reader', { verbose:false });
       setLed('gray','Solicitando cámara…');
 
+      // Enumerar cámaras y elegir trasera
       const cams = await Html5Qrcode.getCameras();
-      if(!cams || !cams.length){ setLed('red','No se encontró cámara'); await stop(); return; }
+      if (!cams || !cams.length) { setLed('red','No se encontró cámara'); await stop(); return; }
       const back = cams.find(c=>/back|rear|environment|trasera/i.test(c.label||'')) || cams[0];
 
+      // Iniciar con deviceId concreto
       await qr.start(
-        { deviceId:{ exact: back.id || back } },
-        { fps:12, qrbox:{ width:boxW, height:boxH }, experimentalFeatures:{ useBarCodeDetectorIfSupported:true }, videoConstraints:{ facingMode:'environment' } },
-        onScan, onError
+        { deviceId: { exact: back.id || back } },
+        {
+          fps: 12,
+          qrbox: { width: boxW, height: boxH },
+          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+          videoConstraints: { facingMode: 'environment' }
+        },
+        onScan,
+        onError
       );
-      scanning = true; setLed('gray','Escaneando…');
-    }catch(e){ setLed('red','No se pudo iniciar la cámara'); await stop(); }
+
+      scanning = true;
+      setLed('gray','Escaneando…');
+
+      // Arreglo final del <video> embebido
+      await fixVideoOnce();
+
+    }catch(e){
+      setLed('red','No se pudo iniciar la cámara');
+      await stop();
+    }
   };
 
   async function stop(){
-    try{ if(qr && scanning){ await qr.stop(); } if(qr){ await qr.clear(); } scanning=false; }catch(_){}
-    el.reader.style.height='0px'; el.reader.style.display='none'; setLed('gray','Cámara inactiva');
+    try{
+      if(qr && scanning){ await qr.stop(); }
+      if(qr){ await qr.clear(); }
+      scanning = false;
+    }catch(_){}
+    el.reader.style.height  = '0px';
+    el.reader.style.display = 'none';
+    setLed('gray','Cámara inactiva');
   }
+
   el.scanStop.onclick=stop;
-  el.scanClear.onclick=async()=>{ await stop(); el.key.value=''; lastFicha=null; el.product.innerHTML=''; el.cantidad.value='1'; el.contarPor.value='u'; calcTotal(); el.key.focus(); };
+  el.scanClear.onclick=async()=>{
+    await stop(); el.key.value=''; lastFicha=null; el.product.innerHTML='';
+    el.cantidad.value='1'; el.contarPor.value='u'; calcTotal(); el.key.focus();
+  };
 
   /* Registrar */
   el.enviar.onclick=()=>enviar(false);
