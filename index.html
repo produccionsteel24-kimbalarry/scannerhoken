@@ -1,4 +1,4 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="utf-8" />
@@ -41,7 +41,7 @@
 
     #scanBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 
-    /* Visor “banda” 1D */
+    /* Contenedor del visor */
     #reader{
       position:relative;
       z-index:10;
@@ -187,26 +187,13 @@
   function antiCache(path){ return API + path + (path.includes('?')?'&':'?') + 't=' + Date.now(); }
 
   async function apiGet(path){
-    const r = await fetch(antiCache(path), {
-      method: 'GET',
-      mode: 'cors',
-      cache: 'no-store',
-      redirect: 'follow',
-      headers: { 'Accept': 'application/json' }
-    });
+    const r = await fetch(antiCache(path), { method: 'GET', mode: 'cors', cache: 'no-store', redirect: 'follow', headers: { 'Accept': 'application/json' } });
     const tx = await r.text();
     try { return JSON.parse(tx); } catch { return { ok:false, error:'NON_JSON', raw: tx.slice(0,200) }; }
   }
 
   async function apiPost(body){
-    const r = await fetch(antiCache(''), {
-      method: 'POST',
-      mode: 'cors',
-      cache: 'no-store',
-      redirect: 'follow',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify(body)
-    });
+    const r = await fetch(antiCache(''), { method: 'POST', mode: 'cors', cache: 'no-store', redirect: 'follow', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify(body) });
     const tx = await r.text();
     try { return JSON.parse(tx); } catch { return { ok:false, error:'NON_JSON', raw: tx.slice(0,200) }; }
   }
@@ -244,7 +231,7 @@
     calcTotal();
   }
 
-  /* ===== CÁMARA (embebida) ===== */
+  /* ===== CÁMARA (embebida) — MODO QR ===== */
   function setLed(state,msg){ el.scanLed.className='led '+(state||'gray'); el.scanMsg.textContent=msg||''; }
 
   function onScan(txt){
@@ -257,10 +244,10 @@
       if (AUTO && !aviso) { enviar(true); } else { await stop(); }
     })();
   }
-  function onError(_){ /* silencioso por frame */ }
+  function onError(_){}
 
   async function fixVideoOnce(){
-    for(let i=0;i<30;i++){ // ~3s
+    for(let i=0;i<30;i++){
       const v = el.reader.querySelector('video');
       if(v){
         try{
@@ -280,12 +267,11 @@
     try{
       const cardW = el.reader.parentElement.getBoundingClientRect().width || 720;
       const contW = Math.max(320, Math.min(cardW, 720));
-      const boxW  = Math.min(Math.floor(contW * 0.90), 720);
-      const boxH  = Math.max(110, Math.round(boxW * 0.28)); // banda más alta
+      const side  = Math.min(Math.floor(contW * 0.78), 360);   // cuadro para QR
 
       el.reader.style.display = '';
       el.reader.style.width   = contW + 'px';
-      el.reader.style.height  = boxH  + 'px';
+      el.reader.style.height  = side  + 'px';
 
       if (qr) { try{ await qr.stop(); await qr.clear(); }catch(_){} }
       el.reader.innerHTML = '';
@@ -299,17 +285,12 @@
 
       const startConfig = {
         fps: 12,
-        qrbox: { width: boxW, height: boxH },
-        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
-        videoConstraints: {
-          facingMode: 'environment',
-          advanced: [{ focusMode: 'continuous' }, { torch: false }]
-        }
+        // Caja cuadrada para QR
+        qrbox: { width: side, height: side },
+        videoConstraints: { facingMode: 'environment' },
+        // Forzar lectura de QR
+        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
       };
-      // Priorizar Code-128 si está disponible
-      if (window.Html5QrcodeSupportedFormats?.CODE_128) {
-        startConfig.formatsToSupport = [Html5QrcodeSupportedFormats.CODE_128];
-      }
 
       await qr.start(
         { deviceId: { exact: back.id || back } },
