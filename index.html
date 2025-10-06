@@ -168,6 +168,8 @@
   `;
 
   const MOV = {val:'Ingreso'}; let AUTO=false, lastFicha=null, qr=null, scanning=false;
+  let QR_META = { desc: null }; // <-- NUEVO: guarda posible descripción que venga en el QR
+
   [
     'btnIng','btnEgr','btnAuto','estado','key','product','scanStart','scanStop','scanClear',
     'scanLed','scanMsg','reader','contarPor','cantidad','totalUnid','alertUxCaja','oc','opi','obs','resp','enviar','status','respError','apiBadge'
@@ -201,7 +203,7 @@
     try { return JSON.parse(tx); } catch { return { ok:false, error:'NON_JSON', raw: tx.slice(0,200) }; }
   }
 
-  /* Ping + responsables (SIN CAMBIOS pero sin ?. ) */
+  /* Ping + responsables (SIN CAMBIOS) */
   (async ()=>{
     const ping = await apiGet('?action=ping');
     const ok = ping && ping.ok;
@@ -232,31 +234,62 @@
       lastFicha=j.ficha;
       const desc = j.ficha.descripcion ? '<br><b>Descripción:</b> '+j.ficha.descripcion : '';
       const uxc  = j.ficha.unidades_por_caja ? (' | U/Caja: '+j.ficha.unidades_por_caja) : '';
-      el.product.innerHTML = '<small class="mono">Modelo: <b>'+j.ficha.modelo+'</b> | Código: <b>'+j.ficha.codigo+'</b><br>Material: '+j.ficha.material+' | Color: '+j.ficha.color+' | Medidas: '+j.ficha.medidas+uxc+desc+'</small>';
-    } else { lastFicha=null; el.product.innerHTML='<small style="color:#b00">No encontrado en Maestros</small>'; }
+      el.product.innerHTML =
+        '<small class="mono">Modelo: <b>'+j.ficha.modelo+
+        '</b> | Código: <b>'+j.ficha.codigo+
+        '</b><br>Material: '+j.ficha.material+
+        ' | Color: '+j.ficha.color+
+        ' | Medidas: '+j.ficha.medidas+uxc+desc+'</small>';
+    } else {
+      lastFicha=null;
+      // Si no existe en Maestros, mostrar lo que vino en el QR (si vino descripción)
+      if (QR_META.desc){
+        el.product.innerHTML =
+          '<small class="mono">Código: <b>'+key+'</b><br>'+
+          '<b>Descripción:</b> '+QR_META.desc+'</small>';
+      } else {
+        el.product.innerHTML = '<small style="color:#b00">No encontrado en Maestros</small>';
+      }
+    }
     calcTotal();
   }
 
   /* ===== CÁMARA (embebida) — MODO QR ===== */
   function setLed(state,msg){ el.scanLed.className='led '+(state||'gray'); el.scanMsg.textContent=msg||''; }
 
-  function extractCode(raw){
-    if(!raw) return '';
-    var t = String(raw).trim();
-    var m = /c[oó]digo\s*[:\-]\s*([A-Za-z0-9\-]{4,})/i.exec(t);
-    if (m) return m[1].toUpperCase();
-    var head = t.split(/[\n\r\t|;,]/)[0];
-    m = /[A-Za-z0-9]+(?:-[A-Za-z0-9]+){1,}/.exec(head);
-    if (m) return m[0].toUpperCase();
-    return head.toUpperCase();
+  // NUEVO: parsea código + descripción desde el QR
+  function parseQrPayload(raw){
+    if(!raw) return { code:'', desc:'' };
+    var t = String(raw).replace(/\r/g,'').trim();
+
+    var mCode = /c[oó]digo\s*[:\-]\s*([A-Za-z0-9\-_.]{3,})/i.exec(t);
+    var mDesc = /descripci[oó]n\s*[:\-]\s*([\s\S]+)/i.exec(t);
+
+    var code = mCode ? mCode[1] : '';
+    var desc = mDesc ? (mDesc[1]||'').trim() : '';
+
+    if(!code){
+      var parts = t.split(/\n|[\|;]+/).map(function(s){return s.trim();}).filter(Boolean);
+      var cm = parts.length ? /[A-Za-z0-9]+(?:-[A-Za-z0-9]+){1,}/.exec(parts[0]) : null;
+      if (cm) {
+        code = cm[0];
+        if (!desc && parts.length > 1) desc = parts.slice(1).join(' ').trim();
+      } else {
+        code = parts[0] || t;
+      }
+    }
+    return { code: (code||'').toUpperCase(), desc };
   }
 
   function onScan(txt){
     (async function(){
-      const code = extractCode(txt);
-      el.key.value = code;
+      const parsed = parseQrPayload(txt);
+      QR_META.desc = parsed.desc || null;       // guarda desc para fallback
+      el.key.value = parsed.code;               // siempre carga el código en el input
+
       await new Promise(function(r){setTimeout(r,10)});
       await lookupProduct();
+
       setLed('green','Código leído');
       const aviso = el.alertUxCaja.style.display !== 'none';
       if (AUTO && !aviso) { enviar(true); } else { await stop(); }
