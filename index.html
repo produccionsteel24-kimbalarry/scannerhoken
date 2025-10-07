@@ -1,4 +1,4 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="utf-8" />
@@ -197,10 +197,24 @@
     try { return JSON.parse(tx); } catch { return { ok:false, error:'NON_JSON', raw: tx.slice(0,200) }; }
   }
 
+  /* ====== OPCIÓN A: evitar preflight CORS ====== */
   async function apiPost(body){
-    const r = await fetch(antiCache(''), { method: 'POST', mode: 'cors', cache: 'no-store', redirect: 'follow', headers: { 'Content-Type':'application/json','Accept':'application/json' }, body: JSON.stringify(body) });
-    const tx = await r.text();
-    try { return JSON.parse(tx); } catch { return { ok:false, error:'NON_JSON', raw: tx.slice(0,200) }; }
+    try{
+      const r = await fetch(antiCache(''), {
+        method: 'POST',
+        mode: 'cors',
+        cache: 'no-store',
+        redirect: 'follow',
+        // clave: usar text/plain para que GAS acepte sin preflight
+        headers: { 'Content-Type': 'text/plain;charset=utf-8', 'Accept': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const tx = await r.text();
+      try { return JSON.parse(tx); }
+      catch { return { ok:false, error:'NON_JSON', status:r.status, raw: tx.slice(0,200) }; }
+    }catch(err){
+      return { ok:false, error:'NETWORK', raw: (err && err.message) ? err.message : String(err) };
+    }
   }
 
   /* Ping + responsables (SIN CAMBIOS) */
@@ -373,8 +387,10 @@
       if(auto){ el.cantidad.value='1'; el.key.value=''; lastFicha=null; el.product.innerHTML=''; calcTotal(); setLed('gray','Listo para siguiente'); }
       else     { el.cantidad.value='1'; el.obs.value=''; }
     } else {
-      var raw = (j && j.raw) ? (' · pista: '+ j.raw.replace(/\s+/g,' ').slice(0,80)) : '';
-      el.status.textContent = '⚠️ '+(j && j.error ? j.error : 'Error inesperado') + raw;
+      var extra = '';
+      if (j && j.status) extra += ' · status: ' + j.status;
+      if (j && j.raw)    extra += ' · pista: ' + j.raw.replace(/\s+/g,' ').slice(0,80);
+      el.status.textContent = '⚠️ '+(j && j.error ? j.error : 'Error inesperado') + extra;
     }
     if(auto && !scanning && AUTO) el.scanStart.click();
   }
