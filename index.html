@@ -80,6 +80,23 @@
     .alert{background:#ffe9e9;border:1px solid #ffb3b3;color:#9b1c1c;border-radius:10px;padding:10px;font-size:14px}
     .hint{color:#a33;font-size:12px;margin-top:6px}
     .badge{font-size:11px;padding:2px 6px;border-radius:6px;border:1px solid var(--bd);color:#555;margin-left:8px}
+
+    /* Últimos movimientos */
+    .sep{height:1px;border:0;background:var(--bd);margin:14px 0}
+    #recentTitle{margin:0;color:#333;font-size:14px}
+    #recentList{list-style:none;padding:0;margin:8px 0 0}
+    #recentList li{
+      border:1px solid var(--bd);
+      background:#fff;
+      border-radius:10px;
+      padding:8px 10px;
+      margin-bottom:8px;
+      font-size:13px;
+      display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap
+    }
+    #recentList .left{display:flex;gap:8px;flex-wrap:wrap}
+    #recentList .tag{font-size:11px;border:1px solid var(--bd);border-radius:999px;padding:2px 8px;color:#555;background:#fafafa}
+    #recentList .ts{color:#777;font-size:11px}
   </style>
 </head>
 <body>
@@ -164,7 +181,16 @@
     <div class="row"><div><label>OPI (opcional)</label><input id="opi" /></div></div>
     <div class="row"><div><label>Observaciones (opcional)</label><textarea id="obs" rows="2"></textarea></div></div>
 
-    <div class="row"><div class="actions"><button id="enviar">✓ Registrar</button></div><div id="status"></div></div>
+    <div class="row">
+      <div class="actions"><button id="enviar">✓ Registrar</button></div>
+      <div id="status"></div>
+    </div>
+
+    <!-- Separador + últimos movimientos -->
+    <hr class="sep" />
+    <h3 id="recentTitle">Últimos movimientos</h3>
+    <ul id="recentList"></ul>
+
   </div></div>
   `;
 
@@ -172,7 +198,7 @@
 
   [
     'btnIng','btnEgr','btnAuto','estado','key','product','scanStart','scanStop','scanClear',
-    'scanLed','scanMsg','reader','contarPor','cantidad','totalUnid','alertUxCaja','oc','opi','obs','resp','enviar','status','respError','apiBadge'
+    'scanLed','scanMsg','reader','contarPor','cantidad','totalUnid','alertUxCaja','oc','opi','obs','resp','enviar','status','respError','apiBadge','recentList'
   ].forEach(id=>el[id]=$e('#'+id));
 
   /* Movimiento */
@@ -197,7 +223,7 @@
     try { return JSON.parse(tx); } catch { return { ok:false, error:'NON_JSON', raw: tx.slice(0,200) }; }
   }
 
-  /* ====== POST con timeout + diagnóstico (evita preflight con text/plain) ====== */
+  /* ====== POST con timeout + diagnóstico (evita preflight usando text/plain) ====== */
   async function apiPost(body){
     const ctrl = new AbortController();
     const TIMEOUT_MS = 15000; // 15s
@@ -247,6 +273,12 @@
       var raw = (u && u.raw) ? (' · pista: ' + u.raw.replace(/\s+/g,' ').slice(0,80)) : '';
       el.respError.textContent = 'No se pudo cargar responsables' + err + raw;
     }
+
+    // Render inicial de últimos movimientos desde sessionStorage (si los hubiera)
+    try{
+      const saved = JSON.parse(sessionStorage.getItem('recentMoves')||'[]');
+      if(Array.isArray(saved)) { recentMoves = saved.slice(0,5); renderRecent(); }
+    }catch(_){}
   })();
 
   /* Lookup producto */
@@ -286,10 +318,17 @@
     return m ? m[0] : U.trim();
   }
 
+  function vibrate(msOrPattern){
+    if('vibrate' in navigator){
+      try{ navigator.vibrate(msOrPattern); }catch(_){}
+    }
+  }
+
   function onScan(txt){
     (async function(){
       const code = pickCodeFromText(txt);
       el.key.value = code;
+      vibrate(40); // feedback al leer
       await new Promise(r=>setTimeout(r,10));
       await lookupProduct();
       setLed('green','Código leído');
@@ -385,6 +424,38 @@
     el.cantidad.value='1'; el.contarPor.value='u'; calcTotal(); el.key.focus();
   };
 
+  /* ===== Últimos movimientos (solo UI local) ===== */
+  let recentMoves = [];
+  function fmtTs(ts){
+    try{
+      const d = new Date(ts);
+      const dd = d.toLocaleDateString(undefined,{day:'2-digit',month:'2-digit'});
+      const hh = d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+      return dd+' '+hh;
+    }catch(_){ return ''; }
+  }
+  function renderRecent(){
+    if(!el.recentList) return;
+    el.recentList.innerHTML = '';
+    recentMoves.slice(0,5).forEach(m=>{
+      const li = document.createElement('li');
+      li.innerHTML =
+        `<div class="left">
+           <span class="tag">${m.mov}</span>
+           <span><b>${m.cant}u</b> — ${m.modelo} (<span class="mono">${m.codigo}</span>)</span>
+           <span class="tag">Estado: ${m.estado}</span>
+         </div>
+         <span class="ts">${fmtTs(m.ts)}</span>`;
+      el.recentList.appendChild(li);
+    });
+  }
+  function addRecent(m){
+    recentMoves.unshift(m);
+    recentMoves = recentMoves.slice(0,5);
+    renderRecent();
+    try{ sessionStorage.setItem('recentMoves', JSON.stringify(recentMoves)); }catch(_){}
+  }
+
   /* Registrar */
   el.enviar.onclick=function(){enviar(false)};
   async function enviar(auto){
@@ -395,29 +466,41 @@
 
     el.status.style.color = '#333';
     el.status.textContent = auto ? 'Registrando (auto)…' : 'Procesando…';
-    console.debug('POST payload', payload);
 
     const j = await apiPost(payload);
-    console.debug('POST response', j);
 
     if(j && j.ok){
       el.status.style.color = '#111';
       el.status.innerHTML = '✅ '+j.Movimiento+' '+j.Cantidad+'u — '+j.ficha.modelo+' ('+j.ficha.codigo+') — Estado: '+j.Estado+(j.Dest?' → '+j.Dest:'')+'. Saldo: '+j.saldo;
+
+      // Vibración cortita al confirmar
+      vibrate([30, 40, 30]);
+
+      // Agregar a “Últimos movimientos”
+      addRecent({
+        ts: Date.now(),
+        mov: j.Movimiento,
+        cant: j.Cantidad,
+        modelo: j.ficha.modelo,
+        codigo: j.ficha.codigo,
+        estado: j.Estado,
+      });
+
       if(auto){
         el.cantidad.value='1'; el.key.value=''; lastFicha=null; el.product.innerHTML='';
         calcTotal(); setLed('gray','Listo para siguiente');
-      }else{
+      } else {
         el.cantidad.value='1'; el.obs.value='';
       }
     } else {
-      el.status.style.color = '#9b1c1c';
-      let extra = '';
-      if (j && j.httpStatus) extra += ' · HTTP: ' + j.httpStatus;
-      if (j && j.detail)     extra += ' · detalle: ' + String(j.detail).slice(0,120);
-      if (j && j.raw)        extra += ' · pista: ' + j.raw.replace(/\s+/g,' ').slice(0,160);
-      el.status.textContent = '⚠️ ' + (j && j.error ? j.error : 'Error inesperado') + extra;
+      var extra = '';
+      if (j && j.httpStatus) extra += ' · status: ' + j.httpStatus;
+      if (j && j.raw)        extra += ' · pista: ' + j.raw.replace(/\s+/g,' ').slice(0,80);
+      el.status.style.color = '#a00';
+      el.status.textContent = '⚠️ '+(j && j.error ? j.error : 'Error inesperado') + extra;
     }
 
+    // Evitar reabrir cámara si ya está activa (se conserva tu condición)
     if(auto && !scanning && AUTO) el.scanStart.click();
   }
   </script>
