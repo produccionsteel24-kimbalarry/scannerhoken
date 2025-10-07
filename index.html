@@ -259,7 +259,6 @@
   let recentMoves = [];
 
   function mapMoveFromApi(x){
-    // Tolerante a distintas formas de respuesta
     const ficha = x.ficha || {};
     return {
       ts: x.ts || x.timestamp || Date.now(),
@@ -272,9 +271,7 @@
   }
 
   async function fetchRecent(){
-    // 1) intenta /?action=recent&limit=5
     let j = await apiGet('?action=recent&limit=5').catch(()=>null);
-    // 2) intenta /?action=ultimos&n=5
     if(!j || !j.ok) j = await apiGet('?action=ultimos&n=5').catch(()=>null);
     if(j && j.ok && Array.isArray(j.items || j.data || j.rows)){
       const arr = (j.items || j.data || j.rows).map(mapMoveFromApi);
@@ -312,7 +309,6 @@
   }
 
   function addRecentLocal(m){
-    // historial local cuando el backend no provee listado
     try{
       const saved = JSON.parse(sessionStorage.getItem('recentMoves') || '[]');
       const list = [m, ...saved].slice(0,5);
@@ -320,6 +316,21 @@
       recentMoves = list;
       renderRecent();
     }catch(_){}
+  }
+
+  /* ====== Saldo para Egreso (opcional si el backend lo provee) ====== */
+  async function getSaldo(key) {
+    try {
+      let r = await apiGet('?action=saldo&key=' + encodeURIComponent(key));
+      if (r && r.ok && typeof r.saldo === 'number') return r.saldo;
+
+      r = await apiGet('?action=lookup&key=' + encodeURIComponent(key));
+      if (r && r.ok && r.ficha && typeof r.ficha.saldo === 'number') return r.ficha.saldo;
+
+      return null; // si no hay endpoint, no bloqueamos
+    } catch (_) {
+      return null;
+    }
   }
 
   /* Ping + responsables + carga inicial de últimos */
@@ -340,12 +351,9 @@
       el.respError.textContent = 'No se pudo cargar responsables' + err + raw;
     }
 
-    // Intento traer últimos desde Sheets, si no hay endpoint -> sessionStorage
     const okRecent = await fetchRecent();
     if(!okRecent){
-      try{
-        recentMoves = JSON.parse(sessionStorage.getItem('recentMoves')||'[]');
-      }catch(_){ recentMoves = []; }
+      try{ recentMoves = JSON.parse(sessionStorage.getItem('recentMoves')||'[]'); }catch(_){ recentMoves = []; }
       renderRecent();
     }
   })();
@@ -375,7 +383,7 @@
     calcTotal();
   }
 
-  /* ===== CÁMARA (QR) — ahora NO se cierra sola ===== */
+  /* ===== CÁMARA (QR) — NO se cierra sola ===== */
   function setLed(state,msg){ el.scanLed.className='led '+(state||'gray'); el.scanMsg.textContent=msg||''; }
 
   function pickCodeFromText(raw){
@@ -397,11 +405,10 @@
     (async function(){
       const code = pickCodeFromText(txt);
       el.key.value = code;
-      vibrate(40); // feedback al leer
+      vibrate(40);
       await new Promise(r=>setTimeout(r,10));
       await lookupProduct();
       setLed('green','Código leído');
-      // ⚠️ ya no hacemos stop(); la cámara queda activa
       if (AUTO) { enviar(true); }
     })();
   }
@@ -497,9 +504,32 @@
   el.enviar.onclick=function(){enviar(false)};
   async function enviar(auto){
     const total=calcTotal();
-    const payload={ mov: MOV.val, estado: el.estado.value, motivo:'', destino:'', key: el.key.value.trim(), cantidad: String(total), oc: el.oc.value.trim(), opi: el.opi.value.trim(), obs: el.obs.value.trim(), responsable: el.resp.value.trim() };
+    const payload={
+      mov: MOV.val,
+      estado: el.estado.value,
+      motivo:'',
+      destino:'',
+      key: el.key.value.trim(),
+      cantidad: String(total),
+      oc: el.oc.value.trim(),
+      opi: el.opi.value.trim(),
+      obs: el.obs.value.trim(),
+      responsable: el.resp.value.trim()
+    };
     if(!payload.key){ el.status.textContent='Ingrese/escanee Código/Modelo'; return; }
     if(!payload.responsable){ el.status.textContent='Seleccione Responsable'; return; }
+
+    /* --- PRE-CHEQUEO DE SALDO EN EGRESO (si el backend lo ofrece) --- */
+    if (payload.mov === 'Egreso') {
+      const saldo = await getSaldo(payload.key);
+      if (typeof saldo === 'number' && total > saldo) {
+        el.status.style.color = '#a00';
+        el.status.textContent = '⚠️ No hay saldo suficiente. Disponible: '+saldo+'u · Solicitado: '+total+'u';
+        vibrate([20,30,20]);
+        return;
+      }
+    }
+    /* --- FIN PRE-CHEQUEO --- */
 
     el.status.style.color = '#333';
     el.status.textContent = auto ? 'Registrando (auto)…' : 'Procesando…';
@@ -510,7 +540,7 @@
       el.status.style.color = '#111';
       el.status.innerHTML = '✅ '+j.Movimiento+' '+j.Cantidad+'u — '+j.ficha.modelo+' ('+j.ficha.codigo+') — Estado: '+j.Estado+(j.Dest?' → '+j.Dest:'')+'. Saldo: '+j.saldo;
 
-      // Vibración cortita al confirmar
+      // Vibración al confirmar
       vibrate([30, 40, 30]);
 
       // Añade local por si no hay endpoint
@@ -523,13 +553,13 @@
         estado: j.Estado,
       });
 
-      // Intenta sincronizar con los últimos reales del Sheet (si hay endpoint)
+      // Intenta sincronizar con últimos reales del Sheet (si hay endpoint)
       fetchRecent();
 
       if(auto){
         el.cantidad.value='1'; el.key.value=''; lastFicha=null; el.product.innerHTML='';
         calcTotal(); setLed('gray','Listo para siguiente');
-        // OJO: no tocamos la cámara. Sigue abierta.
+        // cámara sigue abierta
       } else {
         el.cantidad.value='1'; el.obs.value='';
       }
@@ -542,7 +572,6 @@
     }
 
     // Si estabas en auto y la cámara ya estaba activa, NO la reabrimos.
-    // (Mantenemos este guard: solo reabre si estaba apagada.)
     if(auto && !scanning && AUTO) el.scanStart.click();
   }
   </script>
