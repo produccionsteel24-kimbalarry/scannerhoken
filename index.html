@@ -186,7 +186,6 @@
       <div id="status"></div>
     </div>
 
-    <!-- Separador + últimos movimientos -->
     <hr class="sep" />
     <h3 id="recentTitle">Últimos movimientos</h3>
     <ul id="recentList"></ul>
@@ -223,10 +222,10 @@
     try { return JSON.parse(tx); } catch { return { ok:false, error:'NON_JSON', raw: tx.slice(0,200) }; }
   }
 
-  /* ====== POST con timeout + diagnóstico (evita preflight usando text/plain) ====== */
+  /* POST con timeout + diagnóstico (evita preflight usando text/plain) */
   async function apiPost(body){
     const ctrl = new AbortController();
-    const TIMEOUT_MS = 15000; // 15s
+    const TIMEOUT_MS = 15000;
     const to = setTimeout(()=>ctrl.abort('timeout'), TIMEOUT_MS);
 
     let res, resText = '';
@@ -256,7 +255,74 @@
     }
   }
 
-  /* Ping + responsables */
+  /* ====== Últimos movimientos desde Sheets (si el backend lo expone) ====== */
+  let recentMoves = [];
+
+  function mapMoveFromApi(x){
+    // Tolerante a distintas formas de respuesta
+    const ficha = x.ficha || {};
+    return {
+      ts: x.ts || x.timestamp || Date.now(),
+      mov: x.mov || x.Movimiento || '',
+      cant: x.cant || x.Cantidad || x.cantidad || '',
+      modelo: x.modelo || ficha.modelo || '',
+      codigo: x.codigo || ficha.codigo || '',
+      estado: x.estado || x.Estado || ''
+    };
+  }
+
+  async function fetchRecent(){
+    // 1) intenta /?action=recent&limit=5
+    let j = await apiGet('?action=recent&limit=5').catch(()=>null);
+    // 2) intenta /?action=ultimos&n=5
+    if(!j || !j.ok) j = await apiGet('?action=ultimos&n=5').catch(()=>null);
+    if(j && j.ok && Array.isArray(j.items || j.data || j.rows)){
+      const arr = (j.items || j.data || j.rows).map(mapMoveFromApi);
+      recentMoves = arr.slice(0,5);
+      renderRecent();
+      try{ sessionStorage.setItem('recentMoves', JSON.stringify(recentMoves)); }catch(_){}
+      return true;
+    }
+    return false;
+  }
+
+  function fmtTs(ts){
+    try{
+      const d = new Date(ts);
+      const dd = d.toLocaleDateString(undefined,{day:'2-digit',month:'2-digit'});
+      const hh = d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+      return dd+' '+hh;
+    }catch(_){ return ''; }
+  }
+
+  function renderRecent(){
+    if(!el.recentList) return;
+    el.recentList.innerHTML = '';
+    (recentMoves||[]).slice(0,5).forEach(m=>{
+      const li = document.createElement('li');
+      li.innerHTML =
+        `<div class="left">
+           <span class="tag">${m.mov}</span>
+           <span><b>${m.cant}u</b> — ${m.modelo} (<span class="mono">${m.codigo}</span>)</span>
+           <span class="tag">Estado: ${m.estado}</span>
+         </div>
+         <span class="ts">${fmtTs(m.ts)}</span>`;
+      el.recentList.appendChild(li);
+    });
+  }
+
+  function addRecentLocal(m){
+    // historial local cuando el backend no provee listado
+    try{
+      const saved = JSON.parse(sessionStorage.getItem('recentMoves') || '[]');
+      const list = [m, ...saved].slice(0,5);
+      sessionStorage.setItem('recentMoves', JSON.stringify(list));
+      recentMoves = list;
+      renderRecent();
+    }catch(_){}
+  }
+
+  /* Ping + responsables + carga inicial de últimos */
   (async ()=>{
     const ping = await apiGet('?action=ping');
     const ok = ping && ping.ok;
@@ -274,11 +340,14 @@
       el.respError.textContent = 'No se pudo cargar responsables' + err + raw;
     }
 
-    // Render inicial de últimos movimientos desde sessionStorage (si los hubiera)
-    try{
-      const saved = JSON.parse(sessionStorage.getItem('recentMoves')||'[]');
-      if(Array.isArray(saved)) { recentMoves = saved.slice(0,5); renderRecent(); }
-    }catch(_){}
+    // Intento traer últimos desde Sheets, si no hay endpoint -> sessionStorage
+    const okRecent = await fetchRecent();
+    if(!okRecent){
+      try{
+        recentMoves = JSON.parse(sessionStorage.getItem('recentMoves')||'[]');
+      }catch(_){ recentMoves = []; }
+      renderRecent();
+    }
   })();
 
   /* Lookup producto */
@@ -306,7 +375,7 @@
     calcTotal();
   }
 
-  /* ===== CÁMARA (QR) ===== */
+  /* ===== CÁMARA (QR) — ahora NO se cierra sola ===== */
   function setLed(state,msg){ el.scanLed.className='led '+(state||'gray'); el.scanMsg.textContent=msg||''; }
 
   function pickCodeFromText(raw){
@@ -332,8 +401,8 @@
       await new Promise(r=>setTimeout(r,10));
       await lookupProduct();
       setLed('green','Código leído');
-      const aviso = el.alertUxCaja.style.display !== 'none';
-      if (AUTO && !aviso) { enviar(true); } else { await stop(); }
+      // ⚠️ ya no hacemos stop(); la cámara queda activa
+      if (AUTO) { enviar(true); }
     })();
   }
   function onError(_) {}
@@ -424,38 +493,6 @@
     el.cantidad.value='1'; el.contarPor.value='u'; calcTotal(); el.key.focus();
   };
 
-  /* ===== Últimos movimientos (solo UI local) ===== */
-  let recentMoves = [];
-  function fmtTs(ts){
-    try{
-      const d = new Date(ts);
-      const dd = d.toLocaleDateString(undefined,{day:'2-digit',month:'2-digit'});
-      const hh = d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
-      return dd+' '+hh;
-    }catch(_){ return ''; }
-  }
-  function renderRecent(){
-    if(!el.recentList) return;
-    el.recentList.innerHTML = '';
-    recentMoves.slice(0,5).forEach(m=>{
-      const li = document.createElement('li');
-      li.innerHTML =
-        `<div class="left">
-           <span class="tag">${m.mov}</span>
-           <span><b>${m.cant}u</b> — ${m.modelo} (<span class="mono">${m.codigo}</span>)</span>
-           <span class="tag">Estado: ${m.estado}</span>
-         </div>
-         <span class="ts">${fmtTs(m.ts)}</span>`;
-      el.recentList.appendChild(li);
-    });
-  }
-  function addRecent(m){
-    recentMoves.unshift(m);
-    recentMoves = recentMoves.slice(0,5);
-    renderRecent();
-    try{ sessionStorage.setItem('recentMoves', JSON.stringify(recentMoves)); }catch(_){}
-  }
-
   /* Registrar */
   el.enviar.onclick=function(){enviar(false)};
   async function enviar(auto){
@@ -476,8 +513,8 @@
       // Vibración cortita al confirmar
       vibrate([30, 40, 30]);
 
-      // Agregar a “Últimos movimientos”
-      addRecent({
+      // Añade local por si no hay endpoint
+      addRecentLocal({
         ts: Date.now(),
         mov: j.Movimiento,
         cant: j.Cantidad,
@@ -486,9 +523,13 @@
         estado: j.Estado,
       });
 
+      // Intenta sincronizar con los últimos reales del Sheet (si hay endpoint)
+      fetchRecent();
+
       if(auto){
         el.cantidad.value='1'; el.key.value=''; lastFicha=null; el.product.innerHTML='';
         calcTotal(); setLed('gray','Listo para siguiente');
+        // OJO: no tocamos la cámara. Sigue abierta.
       } else {
         el.cantidad.value='1'; el.obs.value='';
       }
@@ -500,7 +541,8 @@
       el.status.textContent = '⚠️ '+(j && j.error ? j.error : 'Error inesperado') + extra;
     }
 
-    // Evitar reabrir cámara si ya está activa (se conserva tu condición)
+    // Si estabas en auto y la cámara ya estaba activa, NO la reabrimos.
+    // (Mantenemos este guard: solo reabre si estaba apagada.)
     if(auto && !scanning && AUTO) el.scanStart.click();
   }
   </script>
